@@ -1,0 +1,76 @@
+<?php
+// /horarios/app/controllers/horarios-treino/listHorariosTreinoRelatorio.php
+require_once __DIR__ . '/../../../configs/init.php';
+header('Content-Type: application/json; charset=utf-8');
+
+// Parâmetros obrigatórios/opcionais
+$idAnoLetivo   = isset($_GET['id_ano_letivo'])   ? (int)$_GET['id_ano_letivo']   : 0;
+$idNivelEnsino = isset($_GET['id_nivel_ensino']) ? (int)$_GET['id_nivel_ensino'] : 0;
+$idTurno       = isset($_GET['id_turno'])        ? (int)$_GET['id_turno']        : 0;
+
+// Validação básica
+if ($idAnoLetivo <= 0) {
+    echo json_encode([
+        'status'  => 'error',
+        'message' => 'id_ano_letivo inválido ou não informado.'
+    ]);
+    exit;
+}
+
+try {
+    // Monta o WHERE dinamicamente
+    $where  = " WHERE he.id_ano_letivo = :ano ";
+    $params = [ ':ano' => $idAnoLetivo ];
+
+    // Se veio Nível de Ensino
+    if ($idNivelEnsino > 0) {
+        $where .= " AND he.id_nivel_ensino = :nivel ";
+        $params[':nivel'] = $idNivelEnsino;
+    }
+
+    // Se veio Turno
+    if ($idTurno > 0) {
+        $where .= " AND he.id_turno = :turno ";
+        $params[':turno'] = $idTurno;
+    }
+
+    // Retira o GROUP BY para cada registro ser único
+    // Inclui he.id_horario_escolinha no SELECT
+    $sql = "
+        SELECT 
+            he.id_horario_escolinha,
+            a.ano,
+            mo.nome_modalidade,
+            c.nome_categoria,
+            COALESCE(p.nome_exibicao, p.nome_completo) AS nome_professor
+        FROM horario_escolinha he
+        JOIN ano_letivo   a  ON he.id_ano_letivo   = a.id_ano_letivo
+        JOIN nivel_ensino ne ON he.id_nivel_ensino = ne.id_nivel_ensino
+        JOIN modalidade   mo ON he.id_modalidade   = mo.id_modalidade
+        JOIN categoria    c  ON he.id_categoria    = c.id_categoria
+        JOIN professor    p  ON he.id_professor    = p.id_professor
+        JOIN turno        t  ON he.id_turno        = t.id_turno
+        $where
+        ORDER BY 
+            a.ano,
+            mo.nome_modalidade,
+            c.nome_categoria,
+            p.nome_exibicao
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode([
+        'status' => 'success',
+        'data'   => $rows
+    ], JSON_UNESCAPED_UNICODE);
+
+} catch (Exception $e) {
+    echo json_encode([
+        'status'  => 'error',
+        'message' => $e->getMessage()
+    ]);
+}
+?>

@@ -1,0 +1,141 @@
+<?php
+// app/pages/horarios-treino-relatorio.php
+require_once __DIR__ . '/../../configs/init.php';
+include_once APP_SERVER_PATH . '/models/header.php';
+?>
+<main>
+	<!-- TÍTULO E BREADCRUMB -->
+	<div class="page-header">
+		<h1>Relatório de Horários de Treino</h1>
+		<!-- <button id="btnImprimir" disabled>Imprimir Horários</button> -->
+		<button id="btnImprimir" disabled class="btnImprimir" aria-label="Imprimir Geral">
+			<span class="icon"><i class="fa-solid fa-print"></i></span>
+			<span class="text">Imprimir Geral</span>
+		</button>
+	</div>
+
+	<ul class="breadcrumbs">
+		<li>Relatórios</li>
+		<li> / </li>
+		<li>Horários de Treino</li>
+	</ul>
+
+    <!-- FILTROS: Ano Letivo / Turno / Modalidade / Categoria / Professor / Botão Imprimir -->
+    <div class="card-header">
+        <div class="form-group">
+            <label for="selectAnoLetivo">Ano Letivo:</label>
+            <select id="selectAnoLetivo">
+                <option value="">-- Selecione --</option>
+                <!-- Populado via JS -->
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="selectTurno">Turno:</label>
+            <select id="selectTurno" disabled>
+                <option value="">-- Selecione o Turno --</option>
+            </select>
+        </div>
+
+        <!-- NOVOS FILTROS -->
+        <div class="form-group">
+            <label for="selectModalidade">Modalidade:</label>
+            <select id="selectModalidade" disabled>
+                <option value="">Todos</option>
+                <!-- Populado via JS -->
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="selectCategoria">Categoria:</label>
+            <select id="selectCategoria" disabled>
+                <option value="">Todos</option>
+                <!-- Populado via JS -->
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="selectProfessor">Professor(a):</label>
+            <select id="selectProfessor" disabled>
+                <option value="">Todos</option>
+                <!-- Populado via JS -->
+            </select>
+        </div>
+
+        <!--<button id="btnImprimir" disabled>Imprimir Horários</button>-->
+    </div>
+
+    <!-- TABELA -->
+    <div class="data">
+        <div class="content-data">
+            <div class="table-data">
+                <!-- Trecho de exemplo do HTML de "horarios-treino-geral.php" -->
+                <table>
+                    <thead>
+                        <tr>
+                            <th>
+                                <span class="th-content">Ano Letivo</span>
+                                <span class="sort-icons">
+                                    <i class="fa-solid fa-sort-up" id="sort-ano-asc"></i>
+                                    <i class="fa-solid fa-sort-down" id="sort-ano-desc"></i>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="th-content">Modalidades</span>
+                                <span class="sort-icons">
+                                    <i class="fa-solid fa-sort-up" id="sort-modalidade-asc"></i>
+                                    <i class="fa-solid fa-sort-down" id="sort-modalidade-desc"></i>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="th-content">Categorias</span>
+                                <span class="sort-icons">
+                                    <i class="fa-solid fa-sort-up" id="sort-categoria-asc"></i>
+                                    <i class="fa-solid fa-sort-down" id="sort-categoria-desc"></i>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="th-content">Professor(es)</span>
+                                <span class="sort-icons">
+                                    <i class="fa-solid fa-sort-up" id="sort-professor-asc"></i>
+                                    <i class="fa-solid fa-sort-down" id="sort-professor-desc"></i>
+                                </span>
+                            </th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyRelatorioHorarios">
+                        <!-- Preenchido dinamicamente -->
+                    </tbody>
+                </table>
+                <div id="noDataMessage" class="noDataMessage">
+                    Nenhum horário de treino encontrado.
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- MODAL IMPRESSÃO -->
+<div id="modalImpressao" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Imprimir Relatório</h2>
+            <span class="close-modal" id="closeModalImpressao">&times;</span>
+        </div>
+        <div class="modal-body">
+            <p>Deseja confirmar a impressão do relatório?</p>
+        </div>
+        <div class="modal-footer">
+            <button id="btnImprimirConfirmar">
+                <i class="fa-solid fa-print"></i> Imprimir
+            </button>
+            <button id="btnCancelarImpressao">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<script src="<?php echo JS_PATH; ?>/script.js"></script>
+<script src="<?php echo JS_PATH; ?>/horarios-treino-geral.js"></script>
+</body>
+</html>

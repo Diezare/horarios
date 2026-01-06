@@ -1,0 +1,273 @@
+// app/assets/js/horarios-treino-geral.js
+document.addEventListener('DOMContentLoaded', function() {
+    /* ======================================
+       1) Referências do DOM
+    ====================================== */
+    const selectAnoLetivo = document.getElementById('selectAnoLetivo');
+    const selectTurno     = document.getElementById('selectTurno');
+    const btnImprimir     = document.getElementById('btnImprimir');
+
+    const tbodyRelatorio  = document.getElementById('tbodyRelatorioHorarios');
+    const noDataMessage   = document.getElementById('noDataMessage');
+
+    // Estados
+    let idAnoSelecionado   = null;
+    let idTurnoSelecionado = null;
+
+    // Armazena dados para sort
+    let treinosData = [];
+
+    /* ======================================
+       2) Carregamento de Filtros
+    ====================================== */
+    async function loadAnosLetivos() {
+        try {
+            let resp = await fetch('/horarios/app/controllers/ano-letivo/listAnoLetivo.php')
+                .then(r => r.json());
+            if (resp.status === 'success') {
+                resp.data.forEach(ano => {
+                    const opt = document.createElement('option');
+                    opt.value = ano.id_ano_letivo;
+                    opt.textContent = ano.ano;
+                    selectAnoLetivo.appendChild(opt);
+                });
+            }
+        } catch (err) {
+            console.error('Erro ao carregar anos letivos:', err);
+        }
+    }
+
+    async function loadTurnos() {
+        selectTurno.innerHTML = '<option value="">-- Selecione o Turno --</option>';
+        try {
+            let resp = await fetch('/horarios/app/controllers/turno/listTurno.php')
+                .then(r => r.json());
+            if (resp.status === 'success' && resp.data.length > 0) {
+                resp.data.forEach(turno => {
+                    const opt = document.createElement('option');
+                    opt.value = turno.id_turno;
+                    opt.textContent = turno.nome_turno;
+                    selectTurno.appendChild(opt);
+                });
+            }
+            selectTurno.disabled = false;
+        } catch (err) {
+            console.error('Erro ao carregar turnos:', err);
+        }
+    }
+
+    /* ======================================
+       3) Carrega Tabela de Treinos
+    ====================================== */
+    async function loadTreinosFiltrados() {
+        if (!idAnoSelecionado) {
+            renderTabelaTreinos([]);
+            return;
+        }
+
+        // Monta a querystring
+        const params = new URLSearchParams();
+        params.set('id_ano_letivo', idAnoSelecionado);
+        if (idTurnoSelecionado) {
+            params.set('id_turno', idTurnoSelecionado);
+        }
+
+        const url = `/horarios/app/controllers/horarios-treino/listHorariosTreinoRelatorio.php?` + params.toString();
+
+        try {
+            let resp = await fetch(url).then(r => r.json());
+            if (resp.status === 'success') {
+                treinosData = resp.data;
+                renderTabelaTreinos(treinosData);
+            } else {
+                treinosData = [];
+                renderTabelaTreinos([]);
+            }
+        } catch (err) {
+            console.error('Erro ao obter treinos:', err);
+            treinosData = [];
+            renderTabelaTreinos([]);
+        }
+    }
+
+    function renderTabelaTreinos(rows) {
+        tbodyRelatorio.innerHTML = '';
+        if (!rows || rows.length === 0) {
+            noDataMessage.style.display = 'block';
+            return;
+        }
+        noDataMessage.style.display = 'none';
+
+        rows.forEach((item) => {
+            const tr = document.createElement('tr');
+
+            // Ano Letivo
+            const tdAno = document.createElement('td');
+            tdAno.textContent = item.ano || '';
+            tr.appendChild(tdAno);
+
+            // Modalidade
+            const tdModalidade = document.createElement('td');
+            tdModalidade.textContent = item.nome_modalidade || '';
+            tr.appendChild(tdModalidade);
+
+            // Categoria
+            const tdCategoria = document.createElement('td');
+            tdCategoria.textContent = item.nome_categoria || '';
+            tr.appendChild(tdCategoria);
+
+            // Professor
+            const tdProfessor = document.createElement('td');
+            tdProfessor.textContent = item.nome_professor || '';
+            tr.appendChild(tdProfessor);
+
+            // Ações
+            const tdAcoes = document.createElement('td');
+            const btnPrint = document.createElement('button');
+            btnPrint.classList.add('btn-print');
+            // Precisamos do "id_horario_escolinha" para individual
+            btnPrint.dataset.id = item.id_horario_escolinha || '';
+
+            btnPrint.innerHTML = `
+                <span class="icon"><i class="fa-solid fa-print"></i></span>
+                <span class="text">Imprimir</span>
+            `;
+
+            // Ao clicar, imprime somente este horário (Individual)
+            btnPrint.addEventListener('click', () => {
+                const idHorario = item.id_horario_escolinha;
+                if (!idHorario) {
+                    alert('Não há ID de horário para impressão individual.');
+                    return;
+                }
+                // Monta a URL do relatório "individual"
+                const params = new URLSearchParams();
+                params.set('id_horario_escolinha', idHorario);
+
+                // Se quiser passar "ano" e "turno" também, pode. Mas basta o ID.
+                // params.set('id_ano_letivo', idAnoSelecionado);
+                // params.set('id_turno', idTurnoSelecionado);
+
+                // Abre direto o PDF
+                const finalUrl = '/horarios/app/views/horarios-treino-individual.php?' + params.toString();
+                window.open(finalUrl, '_blank');
+            });
+
+            tdAcoes.appendChild(btnPrint);
+            tr.appendChild(tdAcoes);
+            tbodyRelatorio.appendChild(tr);
+        });
+    }
+
+    /* ======================================
+       4) Eventos dos Filtros e Botão Geral
+    ====================================== */
+    selectAnoLetivo.addEventListener('change', () => {
+        idAnoSelecionado = selectAnoLetivo.value || null;
+
+        if (!idAnoSelecionado) {
+            selectTurno.disabled = true;
+            btnImprimir.disabled = true;
+            tbodyRelatorio.innerHTML = '';
+            noDataMessage.style.display = 'block';
+            return;
+        }
+        selectTurno.disabled = false;
+        btnImprimir.disabled = false;
+
+        // Reseta turno
+        selectTurno.value = '';
+        idTurnoSelecionado = null;
+
+        loadTurnos();
+        loadTreinosFiltrados();
+    });
+
+    selectTurno.addEventListener('change', () => {
+        idTurnoSelecionado = selectTurno.value || null;
+        loadTreinosFiltrados();
+    });
+
+    // Ao clicar no botão "Imprimir" geral
+    btnImprimir.addEventListener('click', () => {
+        if (!idAnoSelecionado) {
+            alert('Selecione um Ano Letivo.');
+            return;
+        }
+        
+        // MODIFICAÇÃO: Exigir a seleção do turno
+        if (!idTurnoSelecionado) {
+            alert('Selecione um Turno antes de imprimir.');
+            return;
+        }
+        
+        // Monta a URL do relatório "geral"
+        const params = new URLSearchParams();
+        params.set('id_ano_letivo', idAnoSelecionado);
+        params.set('id_turno', idTurnoSelecionado); // Sempre inclui o id_turno
+        
+        // Abre direto o PDF geral
+        const finalUrl = '/horarios/app/views/horarios-treino-geral.php?' + params.toString();
+        window.open(finalUrl, '_blank');
+    });
+
+    /* ======================================
+       5) Inicialização
+    ====================================== */
+    loadAnosLetivos();
+    renderTabelaTreinos([]);
+    selectTurno.disabled = true;
+    btnImprimir.disabled = true;
+
+    /* ======================================
+       6) Ordenação (Sort)
+    ====================================== */
+    function sortTableData(key, order) {
+        if (!treinosData || treinosData.length === 0) return;
+        treinosData.sort((a, b) => {
+            let valA = a[key] || '';
+            let valB = b[key] || '';
+            let numA = parseFloat(valA);
+            let numB = parseFloat(valB);
+            if (!isNaN(numA) && !isNaN(numB)) {
+                valA = numA;
+                valB = numB;
+            } else {
+                valA = valA.toString().toLowerCase();
+                valB = valB.toString().toLowerCase();
+            }
+            if (valA < valB) return order === 'asc' ? -1 : 1;
+            if (valA > valB) return order === 'asc' ? 1 : -1;
+            return 0;
+        });
+        renderTabelaTreinos(treinosData);
+    }
+
+    document.getElementById('sort-ano-asc').addEventListener('click', () => {
+        sortTableData('ano', 'asc');
+    });
+    document.getElementById('sort-ano-desc').addEventListener('click', () => {
+        sortTableData('ano', 'desc');
+    });
+
+    document.getElementById('sort-modalidade-asc').addEventListener('click', () => {
+        sortTableData('nome_modalidade', 'asc');
+    });
+    document.getElementById('sort-modalidade-desc').addEventListener('click', () => {
+        sortTableData('nome_modalidade', 'desc');
+    });
+
+    document.getElementById('sort-categoria-asc').addEventListener('click', () => {
+        sortTableData('nome_categoria', 'asc');
+    });
+    document.getElementById('sort-categoria-desc').addEventListener('click', () => {
+        sortTableData('nome_categoria', 'desc');
+    });
+
+    document.getElementById('sort-professor-asc').addEventListener('click', () => {
+        sortTableData('nome_professor', 'asc');
+    });
+    document.getElementById('sort-professor-desc').addEventListener('click', () => {
+        sortTableData('nome_professor', 'desc');
+    });
+});

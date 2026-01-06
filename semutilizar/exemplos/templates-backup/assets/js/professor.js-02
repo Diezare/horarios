@@ -1,0 +1,614 @@
+document.addEventListener('DOMContentLoaded', function() {
+
+    // ------------------------------------------------------------
+    // 0) Funções para carregar Anos Letivos (exemplo: modal de impressão)
+    // ------------------------------------------------------------
+    function carregarAnosLetivos() {
+        fetch('/horarios/app/controllers/ano-letivo/listAnoLetivo.php')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const sel = document.getElementById('select-ano-letivo-print');
+                    if (sel) {
+                        sel.innerHTML = '<option value="">-- Selecione --</option>';
+                        data.data.forEach(ano => {
+                            sel.innerHTML += `<option value="${ano.id_ano_letivo}">${ano.ano}</option>`;
+                        });
+                    }
+                }
+            })
+            .catch(err => console.error(err));
+    }
+
+    // ------------------------------------------------------------
+    // 1) Referências aos modais
+    // ------------------------------------------------------------
+    // (Cadastro/edição do professor)
+    const modalProfessor = document.getElementById('modal-professor');
+    const btnAdd = document.getElementById('btn-add');
+    const closeModalElements = document.querySelectorAll('#modal-professor .close-modal');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const saveBtn = document.getElementById('save-btn');
+
+    // (Exclusão de professor)
+    const modalDelete = document.getElementById('modal-delete');
+    const closeDeleteModalBtn = document.getElementById('close-delete-modal');
+    const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+    const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+
+    // (Modal de Vincular Disciplinas)
+    const modalProfessorDisciplina = document.getElementById('modal-professor-disciplina');
+    const closeProfessorDisciplinaModal = document.getElementById('close-professor-disciplina-modal');
+    const saveProfessorDisciplinaBtn = document.getElementById('save-professor-disciplina-btn');
+    const cancelProfessorDisciplinaBtn = document.getElementById('cancel-professor-disciplina-btn');
+
+    // (Modal de Restrições)
+    const modalProfessorRestricoes = document.getElementById('modal-professor-restricoes');
+    const closeProfessorRestricoesModal = document.getElementById('close-professor-restricoes-modal');
+    const saveProfessorRestricoesBtn = document.getElementById('save-professor-restricoes-btn');
+    const cancelProfessorRestricoesBtn = document.getElementById('cancel-professor-restricoes-btn');
+
+    // (Modal de Turnos)
+    const modalProfessorTurno = document.getElementById('modal-professor-turno');
+    const closeProfessorTurnoModal = document.getElementById('close-professor-turno-modal');
+    const saveProfessorTurnoBtn = document.getElementById('save-professor-turno-btn');
+    const cancelProfessorTurnoBtn = document.getElementById('cancel-professor-turno-btn');
+
+    // (Modal de Vincular Disciplina-Turma)
+    const modalProfessorDisciplinaTurma = document.getElementById('modal-professor-disciplina-turma');
+    const closeProfessorDisciplinaTurmaModal = document.getElementById('close-professor-disciplina-turma-modal');
+    const saveProfessorDisciplinaTurmaBtn = document.getElementById('save-professor-disciplina-turma-btn');
+    const cancelProfessorDisciplinaTurmaBtn = document.getElementById('cancel-professor-disciplina-turma-btn');
+
+    // (Modal de Impressão)
+    const modalPrint = document.getElementById('modal-print-professor');
+    const closePrintProfessorBtn = document.getElementById('close-print-professor');
+    const btnImprimirProfessor = document.getElementById('btn-imprimir');
+    const btnCancelarProfessor = document.getElementById('btn-cancelar');
+
+    // ------------------------------------------------------------
+    // 2) Referências aos elementos da tabela + dados
+    // ------------------------------------------------------------
+    const professorTableBody = document.getElementById('professorTable');
+    const noDataMessage = document.getElementById('no-data-message');
+    let currentEditId = null;
+    let isEditMode = false;
+
+    // (Para impressão)
+    let currentPrintProfessorId = null;
+
+    // ------------------------------------------------------------
+    // 3) Abrir/Fechar com Animação (funções genéricas)
+    // ------------------------------------------------------------
+    function openModalAnimated(modal) {
+        if (!modal) return;
+        modal.style.display = 'block';
+        modal.classList.remove('fade-out');
+        modal.classList.add('fade-in');
+        const content = modal.querySelector('.modal-content');
+        if (content) {
+            content.classList.remove('slide-up');
+            content.classList.add('slide-down');
+        }
+    }
+    function closeModalAnimated(modal) {
+        if (!modal) return;
+        const content = modal.querySelector('.modal-content');
+        if (content) {
+            content.classList.remove('slide-down');
+            content.classList.add('slide-up');
+        }
+        modal.classList.remove('fade-in');
+        modal.classList.add('fade-out');
+        setTimeout(() => {
+            modal.style.display = 'none';
+            if (content) content.classList.remove('slide-up');
+            modal.classList.remove('fade-out');
+        }, 300);
+    }
+
+    // ------------------------------------------------------------
+    // 4) Modal principal (Adicionar/Editar Professor)
+    // ------------------------------------------------------------
+    function openProfessorModal() {
+        // Se for modo edição, já deve preencher os campos em outro lugar
+        openModalAnimated(modalProfessor);
+        if (!isEditMode) {
+            clearForm();
+            const titleElem = document.getElementById('modal-title');
+            if (titleElem) titleElem.innerText = 'Adicionar Professor';
+            if (saveBtn) saveBtn.innerText = 'Salvar';
+        }
+    }
+    function closeProfessorModal() {
+        isEditMode = false;
+        currentEditId = null;
+        closeModalAnimated(modalProfessor);
+    }
+
+    // ------------------------------------------------------------
+    // 5) Modal de exclusão
+    // ------------------------------------------------------------
+    function openDeleteModal() {
+        openModalAnimated(modalDelete);
+    }
+    function closeDeleteModal() {
+        closeModalAnimated(modalDelete);
+    }
+
+    // ------------------------------------------------------------
+    // 6) Modal de Vincular Disciplinas
+    // ------------------------------------------------------------
+    function openModalProfessorDisciplina() {
+        openModalAnimated(modalProfessorDisciplina);
+        // Lógica de carregar checkboxes, etc.
+    }
+    function closeModalProfessorDisciplina() {
+        closeModalAnimated(modalProfessorDisciplina);
+    }
+
+    // ------------------------------------------------------------
+    // 7) Modal de Restrições
+    // ------------------------------------------------------------
+    function openModalProfessorRestricoes() {
+        openModalAnimated(modalProfessorRestricoes);
+        // Carregar a grade de restrições, etc.
+    }
+    function closeModalProfessorRestricoes() {
+        closeModalAnimated(modalProfessorRestricoes);
+    }
+
+    // ------------------------------------------------------------
+    // 8) Modal de Turno
+    // ------------------------------------------------------------
+    function openModalProfessorTurno() {
+        openModalAnimated(modalProfessorTurno);
+        // Carregar turnos
+    }
+    function closeModalProfessorTurno() {
+        closeModalAnimated(modalProfessorTurno);
+    }
+
+    // ------------------------------------------------------------
+    // 9) Modal de Vincular Disciplina-Turma
+    // ------------------------------------------------------------
+    function openModalProfessorDisciplinaTurma() {
+        openModalAnimated(modalProfessorDisciplinaTurma);
+        // Carregar turmas e disciplinas
+    }
+    function closeModalProfessorDisciplinaTurma() {
+        closeModalAnimated(modalProfessorDisciplinaTurma);
+    }
+
+    // ------------------------------------------------------------
+    // 10) Modal de Impressão
+    // ------------------------------------------------------------
+    function openPrintProfessorModal() {
+        // Limpa checkboxes
+        const chkDisciplinas = document.getElementById('chk-prof-disciplinas');
+        const chkRestricoes  = document.getElementById('chk-prof-restricoes');
+        const chkTurnos      = document.getElementById('chk-prof-turnos');
+        const chkTurmas      = document.getElementById('chk-prof-turmas');
+        const chkHorarios    = document.getElementById('chk-prof-horarios');
+        if (chkDisciplinas) chkDisciplinas.checked = false;
+        if (chkRestricoes)  chkRestricoes.checked  = false;
+        if (chkTurnos)      chkTurnos.checked      = false;
+        if (chkTurmas)      chkTurmas.checked      = false;
+        if (chkHorarios)    chkHorarios.checked    = false;
+
+        // Recarrega anos letivos no select
+        const selAno = document.getElementById('select-ano-letivo-print');
+        if (selAno) {
+            selAno.innerHTML = '<option value="">-- Selecione --</option>';
+            carregarAnosLetivos();
+        }
+        openModalAnimated(modalPrint);
+    }
+    function closePrintProfessorModal() {
+        closeModalAnimated(modalPrint);
+    }
+
+    // ------------------------------------------------------------
+    // 11) Função para limpar formulário (modal professor)
+    // ------------------------------------------------------------
+    const inputProfessorId = document.getElementById('professorId');
+    const inputNomeCompleto = document.getElementById('nome-completo');
+    const inputNomeExibicao = document.getElementById('nome-exibicao');
+    const inputTelefone = document.getElementById('telefone');
+    const radioSexoMasc = document.getElementById('sexo-masc');
+    const radioSexoFem = document.getElementById('sexo-fem');
+    const radioSexoOutro = document.getElementById('sexo-outro');
+    const inputLimiteAulas = document.getElementById('limite-aulas');
+
+    function clearForm() {
+        if (inputProfessorId) inputProfessorId.value = '';
+        if (inputNomeCompleto) inputNomeCompleto.value = '';
+        if (inputNomeExibicao) inputNomeExibicao.value = '';
+        if (inputTelefone) inputTelefone.value = '';
+        if (radioSexoMasc) radioSexoMasc.checked = true;
+        if (radioSexoFem) radioSexoFem.checked = false;
+        if (radioSexoOutro) radioSexoOutro.checked = false;
+        if (inputLimiteAulas) inputLimiteAulas.value = '';
+    }
+
+    // ------------------------------------------------------------
+    // 12) Adicionar/Editar => Abrir modal principal
+    // ------------------------------------------------------------
+    if (btnAdd) {
+        btnAdd.addEventListener('click', () => {
+            isEditMode = false;
+            openProfessorModal();
+        });
+    }
+    closeModalElements.forEach(el => {
+        el.addEventListener('click', closeProfessorModal);
+    });
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            closeProfessorModal();
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 13) Excluir => Modal Confirm
+    // ------------------------------------------------------------
+    if (closeDeleteModalBtn) {
+        closeDeleteModalBtn.addEventListener('click', closeDeleteModal);
+    }
+    if (cancelDeleteBtn) {
+        cancelDeleteBtn.addEventListener('click', closeDeleteModal);
+    }
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', () => {
+            fetch('/horarios/app/controllers/professor/deleteProfessor.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ id: currentEditId })
+            })
+            .then(r => r.json())
+            .then(response => {
+                alert(response.message);
+                if (response.status === 'success') {
+                    const row = document.querySelector(`tr[data-id="${currentEditId}"]`);
+                    if (row) row.remove();
+                    if (professorTableBody.children.length === 0) {
+                        noDataMessage.style.display = 'block';
+                    }
+                }
+                closeDeleteModal();
+            })
+            .catch(err => console.error(err));
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 14) Vincular Disciplinas => abrir modal
+    // ------------------------------------------------------------
+    if (closeProfessorDisciplinaModal) {
+        closeProfessorDisciplinaModal.addEventListener('click', closeModalProfessorDisciplina);
+    }
+    if (cancelProfessorDisciplinaBtn) {
+        cancelProfessorDisciplinaBtn.addEventListener('click', closeModalProfessorDisciplina);
+    }
+    if (saveProfessorDisciplinaBtn) {
+        saveProfessorDisciplinaBtn.addEventListener('click', () => {
+            // Lógica de salvar...
+            closeModalProfessorDisciplina();
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 15) Restrições => abrir modal
+    // ------------------------------------------------------------
+    if (closeProfessorRestricoesModal) {
+        closeProfessorRestricoesModal.addEventListener('click', closeModalProfessorRestricoes);
+    }
+    if (cancelProfessorRestricoesBtn) {
+        cancelProfessorRestricoesBtn.addEventListener('click', closeModalProfessorRestricoes);
+    }
+    if (saveProfessorRestricoesBtn) {
+        saveProfessorRestricoesBtn.addEventListener('click', () => {
+            // Lógica de salvar...
+            closeModalProfessorRestricoes();
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 16) Turnos => abrir modal
+    // ------------------------------------------------------------
+    if (closeProfessorTurnoModal) {
+        closeProfessorTurnoModal.addEventListener('click', closeModalProfessorTurno);
+    }
+    if (cancelProfessorTurnoBtn) {
+        cancelProfessorTurnoBtn.addEventListener('click', closeModalProfessorTurno);
+    }
+    if (saveProfessorTurnoBtn) {
+        saveProfessorTurnoBtn.addEventListener('click', () => {
+            // Lógica de salvar...
+            closeModalProfessorTurno();
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 17) Vincular Disciplina-Turma => abrir modal
+    // ------------------------------------------------------------
+    if (closeProfessorDisciplinaTurmaModal) {
+        closeProfessorDisciplinaTurmaModal.addEventListener('click', closeModalProfessorDisciplinaTurma);
+    }
+    if (cancelProfessorDisciplinaTurmaBtn) {
+        cancelProfessorDisciplinaTurmaBtn.addEventListener('click', closeModalProfessorDisciplinaTurma);
+    }
+    if (saveProfessorDisciplinaTurmaBtn) {
+        saveProfessorDisciplinaTurmaBtn.addEventListener('click', () => {
+            // Lógica de salvar...
+            closeModalProfessorDisciplinaTurma();
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 18) Modal Impressão
+    // ------------------------------------------------------------
+    if (closePrintProfessorBtn) {
+        closePrintProfessorBtn.addEventListener('click', closePrintProfessorModal);
+    }
+    if (btnCancelarProfessor) {
+        btnCancelarProfessor.addEventListener('click', closePrintProfessorModal);
+    }
+    if (btnImprimirProfessor) {
+        btnImprimirProfessor.addEventListener('click', () => {
+            // Monta a URL e abre
+            let url = '/horarios/app/views/professor.php?id_professor=' + currentPrintProfessorId;
+            const selAno = document.getElementById('select-ano-letivo-print');
+            if (selAno && selAno.value) {
+                url += '&id_ano=' + encodeURIComponent(selAno.value);
+            }
+            if (document.getElementById('chk-prof-disciplinas')?.checked) {
+                url += '&disciplina=1';
+            }
+            if (document.getElementById('chk-prof-restricoes')?.checked) {
+                url += '&restricoes=1';
+            }
+            if (document.getElementById('chk-prof-turnos')?.checked) {
+                url += '&turnos=1';
+            }
+            if (document.getElementById('chk-prof-turmas')?.checked) {
+                url += '&turmas=1';
+            }
+            if (document.getElementById('chk-prof-horarios')?.checked) {
+                url += '&horarios=1';
+            }
+            window.open(url, '_blank');
+            closePrintProfessorModal();
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 19) Listar e Renderizar Professores
+    // ------------------------------------------------------------
+    function fetchProfessores() {
+        fetch('/horarios/app/controllers/professor/listProfessor.php')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    renderTable(data.data);
+                } else {
+                    console.error(data.message);
+                }
+            })
+            .catch(err => console.error(err));
+    }
+
+    function renderTable(rows) {
+        professorTableBody.innerHTML = '';
+        if (!rows || rows.length === 0) {
+            noDataMessage.style.display = 'block';
+            return;
+        }
+        noDataMessage.style.display = 'none';
+
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.dataset.id = row.id_professor;
+
+            // Nome Completo
+            const tdNomeCompleto = document.createElement('td');
+            tdNomeCompleto.textContent = row.nome_completo;
+            tr.appendChild(tdNomeCompleto);
+
+            // Nome Exibicao
+            const tdNomeExibicao = document.createElement('td');
+            tdNomeExibicao.textContent = row.nome_exibicao || '';
+            tr.appendChild(tdNomeExibicao);
+
+            // Ações
+            const tdActions = document.createElement('td');
+            // Editar
+            const btnEdit = document.createElement('button');
+            btnEdit.classList.add('btn-edit');
+            btnEdit.dataset.id = row.id_professor;
+            btnEdit.innerHTML = `<span class="icon"><i class="fa-solid fa-pen-to-square"></i></span>
+                                 <span class="text">Editar</span>`;
+            tdActions.appendChild(btnEdit);
+
+            // Deletar
+            const btnDelete = document.createElement('button');
+            btnDelete.classList.add('btn-delete');
+            btnDelete.dataset.id = row.id_professor;
+            btnDelete.innerHTML = `<span class="icon"><i class="fa-solid fa-trash"></i></span>
+                                   <span class="text">Deletar</span>`;
+            tdActions.appendChild(btnDelete);
+
+            // Imprimir
+            const btnPrint = document.createElement('button');
+            btnPrint.classList.add('btn-print');
+            btnPrint.dataset.id = row.id_professor;
+            btnPrint.innerHTML = `<span class="icon"><i class="fa-solid fa-print"></i></span>
+                                  <span class="text">Imprimir</span>`;
+            tdActions.appendChild(btnPrint);
+
+            // Vincular Disciplinas
+            const btnVincularDisc = document.createElement('button');
+            btnVincularDisc.classList.add('btn-vincular-disciplina');
+            btnVincularDisc.dataset.id = row.id_professor;
+            btnVincularDisc.innerHTML = `<span class="icon"><i class="fa-solid fa-book"></i></span>
+                                         <span class="text">Disciplinas</span>`;
+            tdActions.appendChild(btnVincularDisc);
+
+            // Restrições
+            const btnRestricoes = document.createElement('button');
+            btnRestricoes.classList.add('btn-restricoes');
+            btnRestricoes.dataset.id = row.id_professor;
+            btnRestricoes.innerHTML = `<span class="icon"><i class="fa-solid fa-ban"></i></span>
+                                       <span class="text">Restrições</span>`;
+            tdActions.appendChild(btnRestricoes);
+
+            // Turnos
+            const btnTurno = document.createElement('button');
+            btnTurno.classList.add('btn-turno');
+            btnTurno.dataset.id = row.id_professor;
+            btnTurno.innerHTML = `<span class="icon"><i class="fa-solid fa-clock"></i></span>
+                                  <span class="text">Turnos</span>`;
+            tdActions.appendChild(btnTurno);
+
+            // Vincular Disciplina-Turma
+            const btnVincularDiscTurma = document.createElement('button');
+            btnVincularDiscTurma.classList.add('btn-vincular-disciplina-turma');
+            btnVincularDiscTurma.dataset.id = row.id_professor;
+            btnVincularDiscTurma.innerHTML = `<span class="icon"><i class="fa-solid fa-chalkboard"></i></span>
+                                              <span class="text">Turmas</span>`;
+            tdActions.appendChild(btnVincularDiscTurma);
+
+            tr.appendChild(tdActions);
+            professorTableBody.appendChild(tr);
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 20) Delegar eventos de clique na tabela (editar, deletar, etc.)
+    // ------------------------------------------------------------
+    professorTableBody.addEventListener('click', e => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const id = btn.dataset.id;
+
+        if (btn.classList.contains('btn-edit')) {
+            // Modo edição
+            isEditMode = true;
+            currentEditId = id;
+            fetch('/horarios/app/controllers/professor/listProfessor.php')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        const prof = data.data.find(item => item.id_professor == currentEditId);
+                        if (prof) {
+                            // Preenche
+                            if (inputProfessorId) inputProfessorId.value = prof.id_professor;
+                            if (inputNomeCompleto) inputNomeCompleto.value = prof.nome_completo || '';
+                            if (inputNomeExibicao) inputNomeExibicao.value = prof.nome_exibicao || '';
+                            if (inputTelefone) inputTelefone.value = prof.telefone || '';
+                            if (prof.sexo === 'Feminino' && radioSexoFem) {
+                                radioSexoFem.checked = true;
+                            } else if (prof.sexo === 'Outro' && radioSexoOutro) {
+                                radioSexoOutro.checked = true;
+                            } else if (radioSexoMasc) {
+                                radioSexoMasc.checked = true;
+                            }
+                            let limitVal = parseInt(prof.limite_aulas_fixa_semana, 10);
+                            if (isNaN(limitVal)) limitVal = 0;
+                            if (inputLimiteAulas) inputLimiteAulas.value = limitVal.toString();
+                            // Ajusta o título e o texto do botão
+                            const titleElem = document.getElementById('modal-title');
+                            if (titleElem) titleElem.innerText = 'Editar Professor';
+                            if (saveBtn) saveBtn.innerText = 'Alterar';
+                            openProfessorModal();
+                        }
+                    }
+                });
+        }
+        else if (btn.classList.contains('btn-delete')) {
+            currentEditId = id;
+            openDeleteModal();
+        }
+        else if (btn.classList.contains('btn-print')) {
+            currentPrintProfessorId = id;
+            // Descobre o nome do professor, exibe no campo do modal
+            const tr = btn.closest('tr');
+            const nome = tr.querySelector('td:nth-child(1)').textContent.trim();
+            const selectedProfessor = document.getElementById('selected-professor');
+            if (selectedProfessor) {
+                selectedProfessor.value = nome;
+            }
+            openPrintProfessorModal();
+        }
+        else if (btn.classList.contains('btn-vincular-disciplina')) {
+            // Exemplo: abre modalProfessorDisciplina
+            // Primeiro, salve no hidden input ou algo do tipo
+            const hiddenProfDisc = document.getElementById('select-professor-disciplina');
+            const profNomeDisc = document.getElementById('prof-nome-disciplina');
+            if (hiddenProfDisc) hiddenProfDisc.value = id; 
+            if (profNomeDisc && tr) {
+                profNomeDisc.value = tr.querySelector('td:nth-child(1)').textContent.trim();
+            }
+            openModalProfessorDisciplina();
+        }
+        else if (btn.classList.contains('btn-restricoes')) {
+            // Exemplo: abre modalProfessorRestricoes
+            const hiddenProfRestr = document.getElementById('select-professor-restricoes');
+            const profNomeRestr = document.getElementById('prof-restricoes-nome');
+            if (hiddenProfRestr) hiddenProfRestr.value = id;
+            if (profNomeRestr && tr) {
+                profNomeRestr.value = tr.querySelector('td:nth-child(1)').textContent.trim();
+            }
+            openModalProfessorRestricoes();
+        }
+        else if (btn.classList.contains('btn-turno')) {
+            // Exemplo: abre modalProfessorTurno
+            const hiddenProfTurno = document.getElementById('select-professor-turno');
+            const profNomeTurno = document.getElementById('prof-nome-turno');
+            if (hiddenProfTurno) hiddenProfTurno.value = id;
+            if (profNomeTurno && tr) {
+                profNomeTurno.value = tr.querySelector('td:nth-child(1)').textContent.trim();
+            }
+            openModalProfessorTurno();
+        }
+        else if (btn.classList.contains('btn-vincular-disciplina-turma')) {
+            // Exemplo: abre modalProfessorDisciplinaTurma
+            const hiddenProfDT = document.getElementById('prof-dt-id');
+            const profNomeDT = document.getElementById('prof-dt-nome');
+            if (hiddenProfDT) hiddenProfDT.value = id;
+            if (profNomeDT && tr) {
+                profNomeDT.value = tr.querySelector('td:nth-child(1)').textContent.trim();
+            }
+            openModalProfessorDisciplinaTurma();
+        }
+    });
+
+    // ------------------------------------------------------------
+    // 21) Pesquisa local
+    // ------------------------------------------------------------
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const searchValue = this.value.toLowerCase();
+            const rows = professorTableBody.querySelectorAll('tr');
+            let count = 0;
+            rows.forEach(tr => {
+                const nomeCompleto = tr.querySelector('td:nth-child(1)').textContent.toLowerCase();
+                const nomeExibicao = tr.querySelector('td:nth-child(2)').textContent.toLowerCase();
+                if (nomeCompleto.includes(searchValue) || nomeExibicao.includes(searchValue)) {
+                    tr.style.display = '';
+                    count++;
+                } else {
+                    tr.style.display = 'none';
+                }
+            });
+            noDataMessage.style.display = count === 0 ? 'block' : 'none';
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 22) Iniciar listagem
+    // ------------------------------------------------------------
+    fetchProfessores();
+
+});

@@ -1,0 +1,354 @@
+[2026-01-05 23:21:39] ========================================
+[2026-01-05 23:21:39] GERAÇÃO DE HORÁRIOS - v16.5 (NÍVEL sem apagar outros + PRELOAD ocupação + INSERT com id_turno + horario_fixos)
+[2026-01-05 23:21:39] ========================================
+[2026-01-05 23:21:39] Parâmetros: Ano=7, Nível=3, TurnoFiltro=1 | BT=300000 | chain=10 | global=7
+[2026-01-05 23:21:39] 
+>>> FASE 1: Carregando turmas
+[2026-01-05 23:21:39] ✅ 8 turmas
+[2026-01-05 23:21:39] ✅ Horários antigos deletados (apenas turmas filtradas)
+[2026-01-05 23:21:39] 
+>>> FASE 2: Professores e restrições
+[2026-01-05 23:21:39] ✅ 51 professores
+[2026-01-05 23:21:39] ✅ Restrições carregadas: 1276
+[2026-01-05 23:21:39] 
+>>> FASE 2.5: Carregando cotas (professor_disciplinas_turmas.aulas_semana/prioridade)
+[2026-01-05 23:21:39] ✅ Cotas carregadas: 6 (linhas com aulas_semana > 0)
+[2026-01-05 23:21:39] 
+>>> FASE 3: Estruturando dados
+[2026-01-05 23:21:39] 
+>>> FASE 3.5: Pré-carregando ocupação existente (não alterar outros níveis) + horários fixos
+[2026-01-05 23:21:39] ✅ Ocupações pré-carregadas: 143 (de outras turmas/níveis)
+[2026-01-05 23:21:39] ✅ Fixos carregados e aplicados: 0
+[2026-01-05 23:21:39] 
+>>> FASE 4: Fixação de disciplina
+[2026-01-05 23:21:39] 📌 Fixando: Prova em Quinta 1ª
+[2026-01-05 23:21:39]    ✅ A: Alessandra
+[2026-01-05 23:21:39]    ✅ B: Solange
+[2026-01-05 23:21:39]    ✅ A: Wilton
+[2026-01-05 23:21:39]    ✅ B: Tamires
+[2026-01-05 23:21:39]    ✅ A: Gizely
+[2026-01-05 23:21:39]    ✅ B: Sandra
+[2026-01-05 23:21:39]    ✅ A: Alexandre
+[2026-01-05 23:21:39]    ✅ B: Duda
+[2026-01-05 23:21:39] 
+>>> FASE 5: Ed. Física espelhada
+[2026-01-05 23:21:39] 📌 6º Ano: Ed. Física - 2 aula(s)
+[2026-01-05 23:21:39]    ✅ EF em Terca 6ª
+[2026-01-05 23:21:39]    ✅ EF em Quinta 3ª
+[2026-01-05 23:21:39] 📌 7º Ano: Ed. Física - 2 aula(s)
+[2026-01-05 23:21:39]    ✅ EF em Quinta 4ª
+[2026-01-05 23:21:39]    ✅ EF em Terca 1ª
+[2026-01-05 23:21:39] 📌 8º Ano: Ed. Física - 2 aula(s)
+[2026-01-05 23:21:39]    ✅ EF em Quinta 5ª
+[2026-01-05 23:21:39]    ✅ EF em Terca 5ª
+[2026-01-05 23:21:39] 📌 9º Ano: Ed. Física - 2 aula(s)
+[2026-01-05 23:21:39]    ✅ EF em Quinta 2ª
+[2026-01-05 23:21:39]    ✅ EF em Terca 3ª
+[2026-01-05 23:21:39] 
+>>> ORDEM DE PROCESSAMENTO (mais difícil primeiro)
+[2026-01-05 23:21:39]    • 9º Ano A | turno=1 | score=1157
+[2026-01-05 23:21:39]    • 9º Ano B | turno=1 | score=1157
+[2026-01-05 23:21:39]    • 8º Ano A | turno=1 | score=928
+[2026-01-05 23:21:39]    • 8º Ano B | turno=1 | score=928
+[2026-01-05 23:21:39]    • 6º Ano A | turno=1 | score=808
+[2026-01-05 23:21:39]    • 6º Ano B | turno=1 | score=808
+[2026-01-05 23:21:39]    • 7º Ano A | turno=1 | score=790
+[2026-01-05 23:21:39]    • 7º Ano B | turno=1 | score=790
+[2026-01-05 23:21:39] 
+>>> FASE 6: Alocação por turma (CSP + Greedy + Finalizador)
+[2026-01-05 23:21:39] 
+📊 9º Ano A (turno=1)
+[2026-01-05 23:21:39]    ⚠️ Backtrack limit (17). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:39]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 2 (disciplina 3)...
+[2026-01-05 23:21:39]    ✅ Alocado: Inglês (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:39]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 2 (disciplina 5)...
+[2026-01-05 23:21:39]    ✅ Alocado: Geografia (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Química (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: Química (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Física (restam 1)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 2 (disciplina 13)...
+[2026-01-05 23:21:39]    ✅ Alocado: Física (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Biologia (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: História (restam 2)
+[2026-01-05 23:21:39]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Matemática (restam 5)
+[2026-01-05 23:21:39]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:39]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:39]    ❌ Impossível: Matemática (faltam 3) | vazios=3 | slots_viaveis=0
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:39]    ❌ Impossível: Matemática (faltam 3) | vazios=3 | slots_viaveis=0
+[2026-01-05 23:21:39]    📋 Faltam: Matemática (3)
+[2026-01-05 23:21:39] 
+📊 9º Ano B (turno=1)
+[2026-01-05 23:21:39]    ⚠️ Backtrack limit (4). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:39]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:39]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 2 (disciplina 5)...
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 3 (disciplina 5)...
+[2026-01-05 23:21:39]    ❌ Impossível: Geografia (faltam 1) | vazios=25 | slots_viaveis=0
+[2026-01-05 23:21:39]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 2 (disciplina 3)...
+[2026-01-05 23:21:39]    ✅ Alocado: Inglês (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Química (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: Química (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Física (restam 1)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 2 (disciplina 13)...
+[2026-01-05 23:21:39]    ✅ Alocado: Física (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Biologia (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: História (restam 2)
+[2026-01-05 23:21:39]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:39]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:39]    ✅ Alocado: Matemática (restam 5)
+[2026-01-05 23:21:39]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:39]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:39]    ❌ Impossível: Matemática (faltam 3) | vazios=4 | slots_viaveis=0
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 2 (disciplina 5)...
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 3 (disciplina 5)...
+[2026-01-05 23:21:39]    ❌ Impossível: Geografia (faltam 1) | vazios=4 | slots_viaveis=0
+[2026-01-05 23:21:39]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:39]    ❌ Impossível: Matemática (faltam 3) | vazios=4 | slots_viaveis=0
+[2026-01-05 23:21:39]    📋 Faltam: Matemática (3), Geografia (1)
+[2026-01-05 23:21:39] 
+📊 8º Ano A (turno=1)
+[2026-01-05 23:21:46]    ⚠️ Backtrack limit (300009). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:46]    ✅ Alocado: Química (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Inglês (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Ciências (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: Ciências (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Ciências (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: História (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Geografia (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:46]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Matemática (restam 6)
+[2026-01-05 23:21:46]    ✅ Alocado: Matemática (restam 5)
+[2026-01-05 23:21:46]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:46]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:46]    ✅ Alocado: Matemática (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: Matemática (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Matemática (restam 0)
+[2026-01-05 23:21:46]    ✅ Fechado no finalizador.
+[2026-01-05 23:21:46] 
+📊 8º Ano B (turno=1)
+[2026-01-05 23:21:46]    ⚠️ Backtrack limit (11). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:46]    ✅ Alocado: Química (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:46]    ⚠️ Relaxando limite por dia para 2 (disciplina 3)...
+[2026-01-05 23:21:46]    ✅ Alocado: Inglês (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Ciências (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: Ciências (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Ciências (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: História (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:46]    ✅ Alocado: Geografia (restam 0)
+[2026-01-05 23:21:46]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:46]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:46]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:47]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:47]    ✅ Alocado: Matemática (restam 6)
+[2026-01-05 23:21:47]    ✅ Alocado: Matemática (restam 5)
+[2026-01-05 23:21:47]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:47]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:47]    ✅ Alocado: Matemática (restam 2)
+[2026-01-05 23:21:47]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:47]    ✅ Alocado: Matemática (restam 1)
+[2026-01-05 23:21:47]    ✅ Alocado: Matemática (restam 0)
+[2026-01-05 23:21:47]    ✅ Fechado no finalizador.
+[2026-01-05 23:21:47] 
+📊 6º Ano A (turno=1)
+[2026-01-05 23:21:50]    ⚠️ Backtrack limit (300019). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:50]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:50]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:50]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:50]    ✅ Alocado: Geografia (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: Ciências (restam 2)
+[2026-01-05 23:21:50]    ✅ Alocado: Ciências (restam 1)
+[2026-01-05 23:21:50]    ✅ Alocado: Ciências (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:50]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:50]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:50]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:50]    ⚠️ Relaxando limite por dia para 2 (disciplina 17)...
+[2026-01-05 23:21:50]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: Inglês (restam 4)
+[2026-01-05 23:21:50]    ✅ Alocado: Inglês (restam 3)
+[2026-01-05 23:21:50]    ✅ Alocado: Inglês (restam 2)
+[2026-01-05 23:21:50]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:50]    ✅ Alocado: Inglês (restam 0)
+[2026-01-05 23:21:50]    ✅ Alocado: Matemática (restam 5)
+[2026-01-05 23:21:50]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:50]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:50]    ✅ Alocado: Matemática (restam 2)
+[2026-01-05 23:21:50]    ✅ Alocado: Matemática (restam 1)
+[2026-01-05 23:21:50]    ✅ Alocado: Matemática (restam 0)
+[2026-01-05 23:21:50]    ✅ Fechado no finalizador.
+[2026-01-05 23:21:50] 
+📊 6º Ano B (turno=1)
+[2026-01-05 23:21:54]    ⚠️ Backtrack limit (300019). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:54]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 17)...
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 4)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 5)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 0)
+[2026-01-05 23:21:54]    ✅ Fechado no finalizador.
+[2026-01-05 23:21:54] 
+📊 7º Ano A (turno=1)
+[2026-01-05 23:21:54]    ⚠️ Backtrack limit (1308). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:54]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 4)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 3)...
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 17)...
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 2)...
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:54]    ❌ Impossível: Matemática (faltam 1) | vazios=1 | slots_viaveis=0
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 2)...
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:54]    ❌ Impossível: Matemática (faltam 1) | vazios=1 | slots_viaveis=0
+[2026-01-05 23:21:54]    📋 Faltam: Matemática (1)
+[2026-01-05 23:21:54] 
+📊 7º Ano B (turno=1)
+[2026-01-05 23:21:54]    ⚠️ Backtrack limit (45). Entrando no Greedy crítico + Finalizador...
+[2026-01-05 23:21:54]    ✅ Alocado: Artes (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: História (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Geografia (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 5)...
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 5)...
+[2026-01-05 23:21:54]    ❌ Impossível: Geografia (faltam 1) | vazios=21 | slots_viaveis=0
+[2026-01-05 23:21:54]    ✅ Alocado: Escola da Inteligência (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 4)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 2)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 3)...
+[2026-01-05 23:21:54]    ✅ Alocado: Inglês (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 3)...
+[2026-01-05 23:21:54]    ❌ Impossível: Inglês (faltam 1) | vazios=16 | slots_viaveis=0
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 3)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 17)...
+[2026-01-05 23:21:54]    ✅ Alocado: Gramática (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 2)
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 1)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 8)...
+[2026-01-05 23:21:54]    ✅ Alocado: Ciências (restam 0)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 4)
+[2026-01-05 23:21:54]    ✅ Alocado: Matemática (restam 3)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 2)...
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:54]    ❌ Impossível: Matemática (faltam 3) | vazios=7 | slots_viaveis=0
+[2026-01-05 23:21:54]    ✅ Alocado: Literatura (restam 1)
+[2026-01-05 23:21:54]    ✅ Alocado: Literatura (restam 0)
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 3)...
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 3)...
+[2026-01-05 23:21:54]    ❌ Impossível: Inglês (faltam 1) | vazios=5 | slots_viaveis=0
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 5)...
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 5)...
+[2026-01-05 23:21:54]    ❌ Impossível: Geografia (faltam 1) | vazios=5 | slots_viaveis=0
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 2 (disciplina 2)...
+[2026-01-05 23:21:54]    ⚠️ Relaxando limite por dia para 3 (disciplina 2)...
+[2026-01-05 23:21:54]    ❌ Impossível: Matemática (faltam 3) | vazios=5 | slots_viaveis=0
+[2026-01-05 23:21:54]    📋 Faltam: Matemática (3), Inglês (1), Geografia (1)
+[2026-01-05 23:21:54] 
+>>> FASE 7: Validação
+[2026-01-05 23:21:54] 📊 RESULTADO:
+[2026-01-05 23:21:54]    • Aulas: 227
+[2026-01-05 23:21:54]    • Vazios: 13
+[2026-01-05 23:21:54]    • Consecutivas: 17
+[2026-01-05 23:21:54]    • Backtracks total: 901432
+[2026-01-05 23:21:54] 
+>>> FASE 8: Salvando
+[2026-01-05 23:21:54] ✅ Salvo: 227 aulas

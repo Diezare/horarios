@@ -1,0 +1,8 @@
+Options -Indexes
+
+# Desativar a exibição de erros
+php_flag display_errors Off
+php_flag display_startup_errors Off
+
+# Definir nível de relatório de erros (por exemplo, nenhum)
+php_value error_reporting 0

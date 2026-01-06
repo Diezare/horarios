@@ -1,0 +1,285 @@
+<?php
+// app/views/horarios-treino.php
+require_once __DIR__ . '/../../configs/init.php';
+require_once __DIR__ . '/../../libs/fpdf/fpdf.php';
+
+// 1) Parâmetros GET obrigatórios
+$id_ano_letivo   = isset($_GET['id_ano_letivo'])   ? (int)$_GET['id_ano_letivo']   : 0;
+$id_nivel_ensino = isset($_GET['id_nivel_ensino']) ? (int)$_GET['id_nivel_ensino'] : 0;
+$id_turno        = isset($_GET['id_turno'])        ? (int)$_GET['id_turno']        : 0;
+if (!$id_ano_letivo || !$id_nivel_ensino || !$id_turno) {
+    die('Parâmetros inválidos para gerar PDF.');
+}
+
+// 2) Parâmetros GET opcionais (filtros)
+$filterModalidade = isset($_GET['modalidade']) ? (int)$_GET['modalidade'] : 0;
+$filterCategoria  = isset($_GET['categoria'])  ? (int)$_GET['categoria']  : 0;
+$filterProfessor  = isset($_GET['professor'])  ? (int)$_GET['professor']  : 0;
+ 
+// 3) Carrega os horários de treino do banco, aplicando filtros
+try {
+    $where = " 
+        he.id_ano_letivo   = :ano
+        AND he.id_nivel_ensino = :nivel
+        AND he.id_turno        = :turno
+    ";
+    if ($filterModalidade) {
+        $where .= " AND he.id_modalidade = :modalidade ";
+    }
+    if ($filterCategoria) {
+        $where .= " AND he.id_categoria  = :categoria ";
+    }
+    if ($filterProfessor) {
+        $where .= " AND he.id_professor  = :professor ";
+    }
+
+    $sql = "
+        SELECT he.*,
+               a.ano,
+               ne.nome_nivel_ensino,
+               mo.nome_modalidade,
+               c.nome_categoria,
+               p.nome_exibicao AS nome_professor,
+               t.nome_turno
+          FROM horario_escolinha he
+          JOIN ano_letivo       a   ON he.id_ano_letivo    = a.id_ano_letivo
+          JOIN nivel_ensino     ne  ON he.id_nivel_ensino  = ne.id_nivel_ensino
+          JOIN modalidade       mo  ON he.id_modalidade    = mo.id_modalidade
+          JOIN categoria        c   ON he.id_categoria     = c.id_categoria
+          JOIN professor        p   ON he.id_professor     = p.id_professor
+          JOIN turno            t   ON he.id_turno         = t.id_turno
+         WHERE $where
+         ORDER BY 
+           FIELD(he.dia_semana,'Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado'),
+           he.hora_inicio
+    ";
+
+    $stmt = $pdo->prepare($sql);
+
+    // Bind dos parâmetros obrigatórios
+    $stmt->bindValue(':ano',   $id_ano_letivo, PDO::PARAM_INT);
+    $stmt->bindValue(':nivel', $id_nivel_ensino, PDO::PARAM_INT);
+    $stmt->bindValue(':turno', $id_turno, PDO::PARAM_INT);
+
+    // Bind dos filtros opcionais
+    if ($filterModalidade) {
+        $stmt->bindValue(':modalidade', $filterModalidade, PDO::PARAM_INT);
+    }
+    if ($filterCategoria) {
+        $stmt->bindValue(':categoria', $filterCategoria, PDO::PARAM_INT);
+    }
+    if ($filterProfessor) {
+        $stmt->bindValue(':professor', $filterProfessor, PDO::PARAM_INT);
+    }
+
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (Exception $e) {
+    die('Erro ao buscar dados: ' . $e->getMessage());
+}
+
+// 4) Descobrir nome do turno e ano para exibir no cabeçalho
+$nomeTurno = '';
+$anoLetivo = '';
+if (!empty($rows)) {
+    $nomeTurno = $rows[0]['nome_turno'] ?? '';
+    $anoLetivo = $rows[0]['ano']        ?? '';
+} else {
+    // Se nenhum registro veio, ainda buscamos do BD (opcional)
+    $stmTurno = $pdo->prepare("SELECT nome_turno FROM turno WHERE id_turno=? LIMIT 1");
+    $stmTurno->execute([$id_turno]);
+    if ($rT = $stmTurno->fetch(PDO::FETCH_ASSOC)) {
+        $nomeTurno = $rT['nome_turno'];
+    }
+
+    $stmAno = $pdo->prepare("SELECT ano FROM ano_letivo WHERE id_ano_letivo=? LIMIT 1");
+    $stmAno->execute([$id_ano_letivo]);
+    if ($rA = $stmAno->fetch(PDO::FETCH_ASSOC)) {
+        $anoLetivo = $rA['ano'];
+    }
+}
+
+// 5) Mapeamento para imprimir dia em pé (vertical)
+$diaVertical = [
+    'Domingo' => "D\nO\nM\nI\nN\nG\nO",
+    'Segunda' => "S\nE\nG\nU\nN\nD\nA",
+    'Terca'   => "T\nE\nR\nÇ\nA",
+    'Quarta'  => "Q\nU\nA\nR\nT\nA",
+    'Quinta'  => "Q\nU\nI\nN\nT\nA",
+    'Sexta'   => "S\nE\nX\nT\nA",
+    'Sabado'  => "S\nA\nB\nA\nD\nO"  // pode deixar sem acento ou usar "S\nÁ\nB..."
+];
+
+// 6) Agrupar os horários por dia_semana
+$grupoPorDia = [];
+foreach ($rows as $r) {
+    $grupoPorDia[$r['dia_semana']][] = $r;
+}
+// Só existirão chaves em $grupoPorDia para dias que realmente têm treino,
+// então "caso um dia não tenha treino" ele simplesmente não aparecerá no PDF.
+
+// 7) Classe PDF com cabeçalho e rodapé
+class PDFHorariosTreino extends FPDF
+{
+    public function Header()
+    {
+        global $pdo, $nomeTurno, $anoLetivo;
+
+        // Logo
+        $stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
+        $inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
+
+        if ($inst && !empty($inst['imagem_instituicao'])) {
+            $logoPath = LOGO_PATH . '/' . basename($inst['imagem_instituicao']);
+            if (file_exists($logoPath)) {
+                $desiredSize = 90 * 25.4 / 96; // ~33,9 mm
+                $pageWidth   = $this->GetPageWidth();
+                $x = ($pageWidth - $desiredSize) / 2;
+                $this->Image($logoPath, $x, 10, $desiredSize, $desiredSize);
+            }
+        }
+
+        // Nome da instituição (opcional)
+        $this->Ln(25);
+        $this->SetFont('Arial','B',16);
+        if (!empty($inst['nome_instituicao'])) {
+            $txtInst = mb_convert_encoding($inst['nome_instituicao'], 'ISO-8859-1','UTF-8');
+            $this->Cell(0, 10, $txtInst, 0, 1, 'C');
+        }
+
+        // Cabeçalho personalizado: "Horários de Treino | Turno | Ano: 2025"
+        $this->Ln(3);
+        $this->SetFont('Arial','B',14);
+        $txtHeader = 'Horários de Treino';
+        if ($nomeTurno) {
+            $txtHeader .= ' | ' . $nomeTurno;
+        }
+        if ($anoLetivo) {
+            $txtHeader .= ' | Ano: ' . $anoLetivo;
+        }
+        $this->Cell(0, 8, mb_convert_encoding($txtHeader, 'ISO-8859-1','UTF-8'), 0, 1, 'C');
+        $this->Ln(5); // espaço antes de começar o conteúdo
+    }
+
+    public function Footer()
+    {
+        // Rodapé (data/hora da impressão)
+        $this->SetY(-15);
+        $this->SetFont('Arial','I',8);
+        $txt = 'Impresso em: ' . date('d/m/Y H:i:s');
+        $this->Cell(0,10, mb_convert_encoding($txt,'ISO-8859-1','UTF-8'), 0, 0, 'R');
+    }
+}
+
+// 8) Instancia o PDF
+$pdf = new PDFHorariosTreino('P','mm','A4');
+$pdf->SetTitle(mb_convert_encoding('Horários de Treino','ISO-8859-1','UTF-8'));
+$pdf->AddPage();
+$pdf->SetFont('Arial','',9);
+
+// Se não há registros...
+if (empty($rows)) {
+    $pdf->Cell(0, 8, mb_convert_encoding('Nenhum horário de treino encontrado para os parâmetros informados.','ISO-8859-1','UTF-8'), 0, 1, 'C');
+    $pdf->Output();
+    exit;
+}
+
+// 9) Definir largura das colunas + altura da linha
+$colDiaW         = 10;  // Dia em pé
+$colHorarioW     = 30;  // "08:00 - 09:00"
+$colModalidadeW  = 35;
+$colCategoriaW   = 35;
+$colProfessorW   = 80;  // Ajuste conforme necessidade
+$lineH           = 8;
+
+// 10) Função auxiliar para imprimir o cabeçalho das colunas
+function imprimirCabecalhoColunas($pdf, $colDiaW, $colHorarioW, $colModalidadeW, $colCategoriaW, $colProfessorW, $lineH)
+{
+    // Títulos alterados
+    $pdf->SetFont('Arial','B',9);
+    $pdf->SetFillColor(220,220,220);
+
+    $pdf->Cell($colDiaW,        $lineH, mb_convert_encoding('Dia','ISO-8859-1','UTF-8'),               1, 0, 'C', true);
+    $pdf->Cell($colHorarioW,    $lineH, mb_convert_encoding('Horário de Treino','ISO-8859-1','UTF-8'), 1, 0, 'C', true);
+    $pdf->Cell($colModalidadeW, $lineH, mb_convert_encoding('Modalidade','ISO-8859-1','UTF-8'),        1, 0, 'C', true);
+    $pdf->Cell($colCategoriaW,  $lineH, mb_convert_encoding('Categoria','ISO-8859-1','UTF-8'),         1, 0, 'C', true);
+    $pdf->Cell($colProfessorW,  $lineH, mb_convert_encoding('Professor','ISO-8859-1','UTF-8'),         1, 1, 'C', true);
+
+    $pdf->SetFont('Arial','',9);
+}
+
+// 11) Para cada dia com registros, imprimir o cabeçalho e as linhas
+foreach ($grupoPorDia as $diaSemana => $registrosDia) {
+
+    // Imprime a linha de cabeçalho das colunas
+    imprimirCabecalhoColunas(
+        $pdf,
+        $colDiaW,
+        $colHorarioW,
+        $colModalidadeW,
+        $colCategoriaW,
+        $colProfessorW,
+        $lineH
+    );
+
+    // Calcula quantas linhas esse dia terá, para desenhar o retângulo do dia
+    $numRegDia = count($registrosDia);
+    $boxHeight = $numRegDia * $lineH;
+
+    // Marca posição inicial
+    $x0 = $pdf->GetX();
+    $y0 = $pdf->GetY();
+
+    // Desenha retângulo da coluna do dia
+    $pdf->Rect($x0, $y0, $colDiaW, $boxHeight);
+
+    // Texto vertical do dia (fonte menor se desejar)
+    $pdf->SetFont('Arial','',8); // "menor"
+    $verticalText = $diaVertical[$diaSemana] ?? $diaSemana; 
+    $pdf->SetXY($x0, $y0);
+
+    $numLines   = count(explode("\n", $verticalText));
+    $textHeight = $numLines * 3.5;
+    $startY     = $y0 + ($boxHeight/2) - ($textHeight/2);
+
+    $pdf->SetXY($x0, $startY);
+    $pdf->MultiCell($colDiaW, 3.5, mb_convert_encoding($verticalText,'ISO-8859-1','UTF-8'), 0, 'C');
+
+    // Volta a fonte normal para imprimir as linhas
+    $pdf->SetFont('Arial','',9);
+
+    // Move X para a próxima coluna (Horário)
+    $pdf->SetXY($x0 + $colDiaW, $y0);
+
+    // Imprime cada registro
+    foreach ($registrosDia as $r) {
+        // Ex: "08:00 - 09:30"
+        $horaI = substr($r['hora_inicio'],0,5);
+        $horaF = substr($r['hora_fim'],   0,5);
+        $horario = $horaI.' - '.$horaF;
+
+        $mod  = mb_convert_encoding($r['nome_modalidade'], 'ISO-8859-1','UTF-8');
+        $cat  = mb_convert_encoding($r['nome_categoria'],  'ISO-8859-1','UTF-8');
+        $prof = mb_convert_encoding($r['nome_professor'],  'ISO-8859-1','UTF-8');
+
+        // Horário
+        $pdf->Cell($colHorarioW,    $lineH, $horario, 1, 0, 'C');
+        // Modalidade
+        $pdf->Cell($colModalidadeW, $lineH, $mod,     1, 0, 'C');
+        // Categoria
+        $pdf->Cell($colCategoriaW,  $lineH, $cat,     1, 0, 'C');
+        // Professor
+        $pdf->Cell($colProfessorW,  $lineH, $prof,    1, 1, 'C');
+
+        // Retorna X para continuar na próxima linha (mesmo X do início das colunas)
+        $pdf->SetX($x0 + $colDiaW);
+    }
+
+    // Depois de imprimir as linhas deste dia, pula algum espaço se quiser
+    $pdf->Ln(5);
+}
+
+// 12) Emite o PDF
+$pdf->Output();
+exit;

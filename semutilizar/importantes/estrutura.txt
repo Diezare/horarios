@@ -1,0 +1,229 @@
+essa é a estrutura 
+horarios
+|-- acessos
+|-- |-- log_acessos.log
+|-- app
+|-- |-- assets
+|-- |-- |-- css
+|-- |-- |-- |-- login.js
+|-- |-- |-- |-- style.js
+|-- |-- |-- imgs
+|-- |-- |-- |-- fav
+|-- |-- |-- |-- |-- favicon.png
+|-- |-- |-- |-- form-login
+|-- |-- |-- |-- |-- imagem-fundo.png
+|-- |-- |-- |-- logo
+|-- |-- |-- |-- |-- logo.png
+|-- |-- |-- |-- perfil
+|-- |-- |-- |-- |-- foto.jpg
+|-- |-- |-- |-- |-- sem-foto.jpg
+|-- |-- |-- js
+|-- |-- |-- |-- ano-letivo.js
+|-- |-- |-- |-- backup.js
+|-- |-- |-- |-- dashboard.js
+|-- |-- |-- |-- disciplina.js
+|-- |-- |-- |-- historico-horarios.js
+|-- |-- |-- |-- horario-aulas.js
+|-- |-- |-- |-- horarios.js
+|-- |-- |-- |-- horarios-professores.js
+|-- |-- |-- |-- instituicao.js
+|-- |-- |-- |-- login.js
+|-- |-- |-- |-- nivel-ensino.js
+|-- |-- |-- |-- professor.js
+|-- |-- |-- |-- professor-disciplina.js
+|-- |-- |-- |-- professor-disciplina-turma.js
+|-- |-- |-- |-- professor-restricoes.js
+|-- |-- |-- |-- professor-turno.js
+|-- |-- |-- |-- restore.js
+|-- |-- |-- |-- script.js
+|-- |-- |-- |-- serie.js
+|-- |-- |-- |-- serie-disciplina.js
+|-- |-- |-- |-- turma.js
+|-- |-- |-- |-- turno.js
+|-- |-- |-- |-- turno-dias.js
+|-- |-- |-- |-- usuario.js
+|-- |-- |-- |-- usuario-nivel.js
+|-- |-- controllers
+|-- |-- |-- ano-letivo
+|-- |-- |-- |-- deleteAnoLetivo.php
+|-- |-- |-- |-- insertAnoLetivo.php
+|-- |-- |-- |-- listAnoLetivo.php
+|-- |-- |-- |-- updateAnoLetivo.php
+|-- |-- |-- backup
+|-- |-- |-- |-- generateBackup.php
+|-- |-- |-- |-- listBackup.php
+|-- |-- |-- dashboard
+|-- |-- |-- |-- dashboardData.php
+|-- |-- |-- disciplina
+|-- |-- |-- |-- deleteDisciplina.php
+|-- |-- |-- |-- insertDisciplina.php
+|-- |-- |-- |-- listAllDisciplina.php
+|-- |-- |-- |-- listDisciplina.php
+|-- |-- |-- |-- updateDisciplina.php
+|-- |-- |-- historico-horarios
+|-- |-- |-- |-- deleteHistoricoHorarios.php
+|-- |-- |-- |-- insertHistoricoHorarios.php
+|-- |-- |-- |-- listHistoricoHorarios.php
+|-- |-- |-- |-- listHistoricoHorariosByAnoLetivo.php
+|-- |-- |-- |-- updateHistoricoHorarios.php
+|-- |-- |-- horarios
+|-- |-- |-- |-- archiveHorarios.php
+|-- |-- |-- |-- deleteHorarios.php
+|-- |-- |-- |-- deleteIntervalosTurma.php
+|-- |-- |-- |-- gerarHorariosAutomaticos.php
+|-- |-- |-- |-- insertHorarios.php
+|-- |-- |-- |-- listHistoricoHorarios.php
+|-- |-- |-- |-- listHorarios.php
+|-- |-- |-- |-- listHorariosByAnoLetivo.php
+|-- |-- |-- |-- updateHorarios.php
+|-- |-- |-- instituicao
+|-- |-- |-- |-- deleteInstituicao.php
+|-- |-- |-- |-- deleteLogo.php
+|-- |-- |-- |-- insertInstituicao.php
+|-- |-- |-- |-- listInstituicao.php
+|-- |-- |-- |-- updateInstituicao.php
+|-- |-- |-- login
+|-- |-- |-- |-- loginCheck.php
+|-- |-- |-- nivel-ensino
+|-- |-- |-- |-- deleteNivelEnsino.php
+|-- |-- |-- |-- insertNivelEnsino.php
+|-- |-- |-- |-- listNivelEnsino.php
+|-- |-- |-- |-- listNivelEnsinoByUser.php
+|-- |-- |-- |-- listNivelEnsinoByUserAndAno.php
+|-- |-- |-- |-- updateNivelEnsino.php
+|-- |-- |-- professor
+|-- |-- |-- |-- deleteProfessor.php
+|-- |-- |-- |-- insertProfessor.php
+|-- |-- |-- |-- listProfessor.php
+|-- |-- |-- |-- listProfessoresAulasRelatorio.php
+|-- |-- |-- |-- updateProfessor.php
+|-- |-- |-- professor-disciplina
+|-- |-- |-- |-- deleteProfessorDisciplina.php
+|-- |-- |-- |-- insertProfessorDisciplina.php
+|-- |-- |-- |-- listProfessorDisciplina.php
+|-- |-- |-- |-- listAllProfessorDisciplina.php
+|-- |-- |-- |-- updateProfessorDisciplina.php
+|-- |-- |-- professor-disciplina-turma
+|-- |-- |-- |-- deleteProfessorDisciplinaTurma.php
+|-- |-- |-- |-- insertProfessorDisciplinaTurma.php
+|-- |-- |-- |-- listProfessorDisciplinaTurma.php
+|-- |-- |-- |-- listProfessorDisciplinaTurmaParaRelatorio.php
+|-- |-- |-- |-- updateProfessorDisciplinaTurma.php
+|-- |-- |-- professor-restricoes
+|-- |-- |-- |-- deleteProfessorRestricoes.php
+|-- |-- |-- |-- insertProfessorRestricoes.php
+|-- |-- |-- |-- listProfessorRestricoes.php
+|-- |-- |-- |-- listProfessorRestricoesPorAnoLetivo.php
+|-- |-- |-- |-- updateProfessorRestricoes.php
+|-- |-- |-- professor-turno
+|-- |-- |-- |-- deleteProfessorTurno.php
+|-- |-- |-- |-- insertProfessorTurno.php
+|-- |-- |-- |-- listProfessorTurno.php
+|-- |-- |-- |-- updateProfessorTurno.php
+|-- |-- |-- restore
+|-- |-- |-- |-- listRestore.php
+|-- |-- |-- |-- restoreBackup.php
+|-- |-- |-- serie
+|-- |-- |-- |-- deleteSerie.php
+|-- |-- |-- |-- insertSerie.php
+|-- |-- |-- |-- listSerie.php
+|-- |-- |-- |-- listSerieByUser.php
+|-- |-- |-- |-- updateSerie.php
+|-- |-- |-- serie-disciplina
+|-- |-- |-- |-- deleteSerieDisciplina.php
+|-- |-- |-- |-- insertSerieDisciplina.php
+|-- |-- |-- |-- listSerieDisciplina.php
+|-- |-- |-- |-- listSerieDisciplinaParaRelatorio.php
+|-- |-- |-- |-- updateSerieDisciplina.php
+|-- |-- |-- turma
+|-- |-- |-- |-- deleteTurma.php
+|-- |-- |-- |-- insertTurma.php
+|-- |-- |-- |-- listTurma.php
+|-- |-- |-- |-- listTurmaByUser.php
+|-- |-- |-- |-- listTurmaByUserAndAno.php
+|-- |-- |-- |-- listTurmaPorAnoLetivo.php
+|-- |-- |-- |-- listTurmaPorNivelEnsino.php
+|-- |-- |-- |-- listTurmaRelatorio.php
+|-- |-- |-- |-- listTurmasBySerieAndAno.php
+|-- |-- |-- |-- updateTurma.php
+|-- |-- |-- turno
+|-- |-- |-- |-- deleteTurno.php
+|-- |-- |-- |-- insertTurno.php
+|-- |-- |-- |-- listTurno.php
+|-- |-- |-- |-- updateTurno.php
+|-- |-- |-- turno-dias
+|-- |-- |-- |-- deleteTurnoDias.php
+|-- |-- |-- |-- insertTurnoDias.php
+|-- |-- |-- |-- listTurnoDias.php
+|-- |-- |-- |-- updateTurnoDias.php
+|-- |-- |-- usuario
+|-- |-- |-- |-- deleteFoto.php
+|-- |-- |-- |-- deleteUsuario.php
+|-- |-- |-- |-- insertUsuario.php
+|-- |-- |-- |-- listUsuario.php
+|-- |-- |-- |-- listAllUsuario.php
+|-- |-- |-- |-- updateUsuario.php
+|-- |-- |-- usuario-nivel
+|-- |-- |-- |-- deleteUsuarioNivel.php
+|-- |-- |-- |-- insertUsuarioNivel.php
+|-- |-- |-- |-- listUsuarioNivel.php
+|-- |-- |-- |-- updateUsuarioNivel.php
+|-- |-- help
+|-- |-- |-- ajuda.pdf
+|-- |-- login
+|-- |-- |-- index.php
+|-- |-- |-- logout.php
+|-- |-- models
+|-- |-- |-- header.php
+|-- |-- pages
+|-- |-- |-- ano-letivo.php
+|-- |-- |-- backup.php
+|-- |-- |-- dashboard.php
+|-- |-- |-- disciplina.php
+|-- |-- |-- historico-horarios.php
+|-- |-- |-- horario-aulas.php
+|-- |-- |-- horarios.php
+|-- |-- |-- horarios-professores.php
+|-- |-- |-- instituicao.php
+|-- |-- |-- nivel-ensino.php
+|-- |-- |-- professor.php
+|-- |-- |-- restore.php
+|-- |-- |-- serie.php
+|-- |-- |-- turma.php
+|-- |-- |-- turno.php
+|-- |-- |-- usuario.php
+|-- |-- views
+|-- |-- |-- ano-letivo.php
+|-- |-- |-- ano-letivo-geral.php
+|-- |-- |-- disciplina.php
+|-- |-- |-- disciplina-geral.php
+|-- |-- |-- historico-horarios-paisagem.php
+|-- |-- |-- historico-horarios-retrato.php
+|-- |-- |-- horarios-paisagem.php
+|-- |-- |-- horarios-professores.php
+|-- |-- |-- horarios-retrato.php
+|-- |-- |-- horarios-turma.php
+|-- |-- |-- horarios-unidos.php
+|-- |-- |-- instituicao.php
+|-- |-- |-- instituicao-geral.php
+|-- |-- |-- nivel-ensino.php
+|-- |-- |-- professor.php
+|-- |-- |-- professor-share.php
+|-- |-- |-- serie.php
+|-- |-- |-- turma.php
+|-- |-- |-- turno.php
+|-- |-- |-- usuario.php
+|-- |-- |-- usuario-geral.php
+|-- backup
+|-- |-- backup_log.txt
+|-- configs
+|-- |-- database.php
+|-- |-- funcoes.php
+|-- |-- init.php
+|-- |-- paths.php
+|-- libs
+|-- |-- fpdf
+|-- |-- |-- fpdf.php
+|-- restore
+|-- |-- restore_log.txt
+.htaccess

@@ -1,0 +1,44 @@
+<!-- Modal: Vincular Professor - Disciplinas - Turmas -->
+<div id="modal-professor-disciplina-turma" class="modal">
+	<div class="modal-content">
+		<div class="modal-header">
+			<h2>Vincular Professor(a) com suas </br>Disciplinas e Turmas</h2>
+			<span class="close-modal" id="close-professor-disciplina-turma-modal">&times;</span>
+		</div>
+		<div class="modal-body">
+			<!-- Campo para exibir o nome do professor (read-only) -->
+			<div class="form-group">
+				<label for="prof-dt-nome">Professor(a)</label>
+				<input type="text" id="prof-dt-nome" readonly>
+				<input type="hidden" id="prof-dt-id">
+			</div>
+
+			<!-- Disciplinas já vinculadas ao professor (checkbox disabled) -->
+			<div class="form-group">
+				<label>Disciplinas Vinculadas</label>
+				<div id="disciplina-dt-checkboxes" class="checkbox-grid">
+					<!-- checkboxes gerados via JS, mas desabilitados (read-only) -->
+				</div>
+			</div>
+
+			<!-- Turmas disponíveis + filtro de Série -->
+			<div class="form-group">
+				<label>Turmas</label>
+				<!-- EXEMPLO: um combo para filtrar por série -->
+				<select id="filtro-serie" style="margin-bottom: 10px;">
+					<option value="">-- Todas as séries --</option>
+				</select>
+
+				<!-- Aqui serão gerados os checkboxes das turmas, divididos em colunas -->
+				<div id="turmas-dt-checkboxes" class="checkbox-grid">
+					<!-- checkboxes gerados via JS -->
+				</div>
+			</div>
+		</div>
+
+		<div class="modal-footer">
+			<button id="save-professor-disciplina-turma-btn">Salvar</button>
+			<button id="cancel-professor-disciplina-turma-btn">Cancelar</button>
+		</div>
+	</div>
+</div>

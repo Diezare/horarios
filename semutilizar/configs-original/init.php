@@ -1,0 +1,210 @@
+<?php
+/**
+ * init.php
+ * Inicialização geral da aplicação.
+ */
+
+// Defina os hosts permitidos para imagens (adapte conforme necessário)
+$allowedImgHosts = "http://localhost http://192.168.0.91 http://10.147.20.215";
+
+// Cabeçalhos de segurança – enviados antes de qualquer saída
+header("X-Frame-Options: DENY");
+header("X-Content-Type-Options: nosniff");
+//header("Content-Security-Policy: default-src 'self'; img-src 'self' $allowedImgHosts data:; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://www.gstatic.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com;");
+header("Content-Security-Policy: default-src 'self'; img-src 'self' $allowedImgHosts data:; script-src 'self' https://www.gstatic.com https://cdn.jsdelivr.net https://sweetalert2.github.io; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://www.gstatic.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com;");
+
+if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+    header("Strict-Transport-Security: max-age=31536000; includeSubDomains");
+}
+
+// 1. Carrega as constantes de caminho e funções auxiliares
+require_once __DIR__ . '/paths.php';
+require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/funcoes.php';
+
+// Se necessário, inclua a conexão com o banco de dados (PDO)
+require_once ROOT_PATH . '/configs/database.php';
+
+// 2. Define timezone
+date_default_timezone_set('America/Sao_Paulo');
+
+// 3. Define tempo de vida da sessão em 4 horas (14400 segundos)
+if (!defined('SESSION_LIFETIME')) {
+    define('SESSION_LIFETIME', 14400); // 4 horas
+}
+if (!defined('SESSION_REGENERATE_TIME')) {
+    define('SESSION_REGENERATE_TIME', 3600); // 1 hora
+}
+
+// Configurar o strict mode para sessões
+ini_set('session.use_strict_mode', 1);
+
+/**
+ * Função para registrar eventos de segurança.
+ * Os eventos são registrados no arquivo 'horarios/logs/logs.txt'
+ * com a flag LOCK_EX para evitar condições de corrida.
+ */
+function logSecurityEvent($message) {
+    $logFile = __DIR__ . '/../horarios/logs/logs.txt';
+    $date = date('Y-m-d H:i:s');
+    $line = "[$date] $message\n";
+    file_put_contents($logFile, $line, FILE_APPEND | LOCK_EX);
+}
+
+// 4. Iniciar sessão com cookie seguro, apenas se ainda não estiver ativa
+if (session_status() === PHP_SESSION_NONE) {
+    // Se o HTTP_HOST for 'localhost' ou um IP válido, use esse valor; caso contrário, defina um domínio confiável.
+    if ($_SERVER['HTTP_HOST'] === 'localhost' || filter_var($_SERVER['HTTP_HOST'], FILTER_VALIDATE_IP)) {
+         define('COOKIE_DOMAIN', $_SERVER['HTTP_HOST']);
+    } else {
+         define('COOKIE_DOMAIN', 'seudominio.com'); // Altere para o domínio real, se houver
+    }
+    
+    session_set_cookie_params([
+         'lifetime' => 0,
+         'path'     => '/',
+         'domain'   => COOKIE_DOMAIN,
+         'secure'   => !empty($_SERVER['HTTPS']),
+         'httponly' => true,
+         'samesite' => 'Strict'
+    ]);
+    session_start();
+}
+
+class Sessao
+{
+    public static function verificarSessao($pdo)
+    {
+        self::verificarIdUsuario($pdo);
+        self::verificarTempoInatividade($pdo);
+        self::verificarRegeneracaoId();
+        self::verificarUserAgent();
+        self::verificarEnderecoIP();
+    }
+
+    private static function verificarIdUsuario($pdo)
+    {
+        if (!isset($_SESSION['id_usuario'])) {
+            registrarLogAtividade($pdo, 'acesso_negado_login', null, null);
+            self::redirecionarParaLogin();
+            exit;
+        }
+    }
+
+    private static function verificarTempoInatividade($pdo)
+    {
+        if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > SESSION_LIFETIME) {
+            registrarLogAtividade(
+                $pdo, 
+                'saida_sistema', 
+                $_SESSION['id_usuario'] ?? null, 
+                $_SESSION['nome_usuario'] ?? null
+            );
+            session_unset();
+            session_destroy();
+            self::redirecionarParaLogin();
+        }
+        $_SESSION['last_activity'] = time();
+    }
+
+    private static function verificarRegeneracaoId()
+    {
+        if (!isset($_SESSION['created'])) {
+            $_SESSION['created'] = time();
+        } elseif (time() - $_SESSION['created'] > SESSION_REGENERATE_TIME) {
+            if (!session_regenerate_id(true)) {
+                logSecurityEvent("Falha na regeneração do ID de sessão para o usuário {$_SESSION['id_usuario']}");
+            }
+            $_SESSION['created'] = time();
+        }
+    }
+
+    private static function verificarUserAgent()
+    {
+        $currentUserAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        if (!isset($_SESSION['user_agent'])) {
+            $_SESSION['user_agent'] = $currentUserAgent;
+            $_SESSION['user_agent_discrepancies'] = 0;
+            $_SESSION['user_agent_last_change'] = time();
+        } elseif ($_SESSION['user_agent'] !== $currentUserAgent) {
+            if ((time() - $_SESSION['user_agent_last_change']) < 300) {
+                $_SESSION['user_agent_discrepancies']++;
+            } else {
+                $_SESSION['user_agent_discrepancies'] = 1;
+            }
+            $_SESSION['user_agent_last_change'] = time();
+            if ($_SESSION['user_agent_discrepancies'] >= 3) {
+                logSecurityEvent("Múltiplas discrepâncias no User-Agent detectadas para o usuário {$_SESSION['id_usuario']}. Forçando logout.");
+                session_unset();
+                session_destroy();
+                self::redirecionarParaLogin();
+            } else {
+                logSecurityEvent("Discrepância no User-Agent para o usuário {$_SESSION['id_usuario']}. Sessão: {$_SESSION['user_agent']}, Atual: {$currentUserAgent}");
+                $_SESSION['user_agent'] = $currentUserAgent;
+            }
+        }
+    }
+
+    private static function verificarEnderecoIP()
+    {
+        $currentIP = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+        if (!isset($_SESSION['ip_address'])) {
+            $_SESSION['ip_address'] = $currentIP;
+            $_SESSION['ip_address_discrepancies'] = 0;
+            $_SESSION['ip_address_last_change'] = time();
+        } elseif ($_SESSION['ip_address'] !== $currentIP) {
+            if ((time() - $_SESSION['ip_address_last_change']) < 300) {
+                $_SESSION['ip_address_discrepancies']++;
+            } else {
+                $_SESSION['ip_address_discrepancies'] = 1;
+            }
+            $_SESSION['ip_address_last_change'] = time();
+            if ($_SESSION['ip_address_discrepancies'] >= 3) {
+                logSecurityEvent("Múltiplas discrepâncias no IP para o usuário {$_SESSION['id_usuario']}. Forçando logout.");
+                session_unset();
+                session_destroy();
+                self::redirecionarParaLogin();
+            } else {
+                logSecurityEvent("Discrepância no IP para o usuário {$_SESSION['id_usuario']}. Sessão: {$_SESSION['ip_address']}, Atual: {$currentIP}");
+                $_SESSION['ip_address'] = $currentIP;
+            }
+        }
+    }
+
+    private static function redirecionarParaLogin()
+    {
+        header('Location: ' . BASE_URL . '/app/login/index.php');
+        exit();
+    }
+}
+
+// Certifique-se de que a variável $pdo foi definida.
+if (!isset($pdo)) {
+    die("Erro: conexão com o banco de dados não estabelecida.");
+}
+
+/**
+ * 5) Verificação GLOBAL, exceto nas rotas de login.
+ * Se a URL atual contém "/app/login/index.php", "/loginCheck.php" ou "/app/login/logout.php",
+ * pulamos a verificação. Em todas as outras páginas, exigimos login.
+ */
+$currentUri = $_SERVER['REQUEST_URI'] ?? '';
+
+$excecoes = [
+    '/app/login/index.php',
+    '/app/controllers/login/loginCheck.php',
+    '/app/login/logout.php'
+];
+
+$precisaVerificar = true;
+foreach ($excecoes as $rotaIgnorada) {
+    if (strpos($currentUri, $rotaIgnorada) !== false) {
+        $precisaVerificar = false;
+        break;
+    }
+}
+
+if ($precisaVerificar) {
+    Sessao::verificarSessao($pdo);
+}
+?>

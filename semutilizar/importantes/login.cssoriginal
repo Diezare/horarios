@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap');
+
+:root{ --grey:#F1F0F6; --dark-grey:#8D8D8D; --light:#fff; --dark:#000; --green:#81D43A; --light-green:#E3FFCB; --blue:#6358F8; --light-blue:#D0E4FF; --dark-blue:#0C5FCD; --red:#FC3B56; }
+*{ font-family:'Open Sans',sans-serif; margin:0; padding:0; box-sizing:border-box; }
+
+html, body { height:100%; }
+html { overflow-x:hidden; scrollbar-gutter:stable both-edges; }
+body { background:var(--grey); overflow-x:hidden; }				/* body deixa de ser flex */
+
+/* Wrapper centralizador. O SweetAlert pode ser irmão sem afetar layout */
+.page{
+	min-height:100dvh;
+	display:grid;
+	place-items:center;
+	background-image:url('/horarios/app/assets/imgs/form-login/imagem-fundo.png');
+	background-repeat:no-repeat;
+	background-size:cover;
+	background-position:center;
+}
+
+/* Anti “salto” do SweetAlert2 */
+html.swal2-shown,
+body.swal2-shown{ overflow-y:auto !important; padding-right:0 !important; }
+
+.login-container{
+	background-color:var(--light);
+	padding:30px 40px; border-radius:10px;
+	box-shadow:0 0 12px rgba(0,0,0,.2);
+	width:100%; max-width:400px;
+}
+
+.login-container h1{ font-size:24px; margin-bottom:10px; color:var(--dark); text-align:center; }
+.barra-horizontal{ background-color:var(--blue); height:4px; width:100px; margin:0 auto 20px auto; }
+
+.campo-input{ display:flex; flex-direction:column; margin-bottom:15px; }
+.campo-input label{ margin-bottom:5px; font-weight:700; color:var(--dark); }
+.campo-input input{ padding:10px; border-radius:5px; border:1px solid #bbb; font-size:16px; width:100%; accent-color:#6358F8; }
+
+.lembrar-me{ display:flex; align-items:center; gap:10px; margin:15px 0; }
+.lembrar-me input[type="checkbox"]{ width:16px; height:16px; accent-color:#6358F8; cursor:pointer; }
+
+button[type="submit"]{
+	margin:10px 0; background-color:var(--blue); color:var(--light);
+	border:none; border-radius:5px; padding:10px; width:100%; font-size:16px; cursor:pointer; transition:filter .2s;
+}
+button[type="submit"]:hover{ filter:brightness(0.95); }
+
+.esqueceu-senha{ padding-top:20px; text-align:center; margin-top:10px; }
+.esqueceu-senha span{ color:var(--blue); cursor:pointer; }
+
+/* Tema do Swal */
+.my-swal-popup .swal2-title,
+.my-swal-popup .swal2-html-container{ color:#000 !important; }
+.my-swal-popup .swal2-confirm{ background-color:#6358F8 !important; }
+
+/* base */
+.page { min-height: 100dvh; display: grid; place-items: center; position: relative; z-index: 1; }
+
+/* mobile: triângulo de TR -> BL */
+@media (max-width: 600px) {
+	/* tira imagem de fundo, se houver */
+	body { background-image: none; }
+
+	/* faixa diagonal */
+	.page::before{
+		content: "";
+		position: fixed;			/* cobre toda a viewport */
+		inset: 0;
+		background: var(--blue);
+		/* vértices: topo-direita, base-direita, base-esquerda */
+		clip-path: polygon(100% 0, 100% 65%, 0 100%);
+		z-index: 0;
+		pointer-events: none;
+	}
+
+	/* garante o card acima da faixa */
+	.login-container { position: relative; z-index: 1; }
+}

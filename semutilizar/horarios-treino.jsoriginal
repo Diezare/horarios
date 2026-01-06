@@ -1,0 +1,702 @@
+// app/assets/js/horarios-treino.js
+document.addEventListener('DOMContentLoaded', function() {
+    // ============================
+    // ELEMENTOS
+    // ============================
+    const selectAnoLetivo       = document.getElementById('selectAnoLetivo');
+    const selectNivelEnsino     = document.getElementById('selectNivelEnsino');
+    const selectTurno           = document.getElementById('selectTurno');
+    const btnSelectDays         = document.getElementById('btnSelectDays');
+
+    // Modal Selecionar Dias
+    const modalDiasSemana       = document.getElementById('modal-dias-semana');
+    const closeModalDiasBtn     = document.getElementById('close-modal-dias');
+    const btnOkDias             = document.getElementById('btn-ok-dias');
+    const btnCancelDias         = document.getElementById('btn-cancel-dias');
+    const diasCheckboxes        = document.getElementById('dias-checkboxes');
+
+    // Modal de Exclusão
+    const modalDelete           = document.getElementById('modal-delete');
+    const closeDeleteModalEl    = document.getElementById('close-delete-modal');
+    const confirmDeleteBtn      = document.getElementById('confirm-delete-btn');
+    const cancelDeleteBtn       = document.getElementById('cancel-delete-btn');
+    let pendingDeleteId         = null;
+    let pendingDeleteContainer  = null;
+
+    // Conteúdo principal
+    const contentDataTreino     = document.getElementById('content-data-treino');
+    const diasSelecionadosContainer = document.getElementById('dias-selecionados-container');
+
+    // Modal Adicionar/Editar Horário de Treino
+    const modalHorarioTreino    = document.getElementById('modal-horario-treino');
+    const closeModalHorario     = document.getElementById('close-modal-horario-treino');
+    const btnCancelarTreino     = document.getElementById('btnCancelarTreino');
+    const btnSalvarTreino       = document.getElementById('btnSalvarTreino');
+
+    const horarioTreinoIdInput  = document.getElementById('horarioTreinoId');
+    const selectModalidade      = document.getElementById('selectModalidade');
+    const selectCategoria       = document.getElementById('selectCategoria');
+    const selectProfessor       = document.getElementById('selectProfessor');
+    const inputHoraInicio       = document.getElementById('inputHoraInicio');
+    const inputHoraFim          = document.getElementById('inputHoraFim');
+
+    // Botão de Imprimir
+    const btnImprimir           = document.getElementById('btnImprimir');
+
+    // ============================
+    // VARIÁVEIS DE CONTROLE
+    // ============================
+    let diasSelecionados = []; 
+    let currentDiaSemana = null;
+    let currentEditId = null;
+    let idAnoLetivoSelecionado = null;
+    let idNivelEnsinoSelecionado = null;
+    let idTurnoSelecionado = null;
+
+    // ============================
+    // FUNÇÕES DE CONVERSÃO DE DIA
+    // ============================
+    function toDisplayDia(dia) {
+        if (dia === "Terca") return "Terça";
+        if (dia === "Sabado") return "Sábado";
+        return dia;
+    }
+    function toDbDia(dia) {
+        if (dia === "Terça") return "Terca";
+        if (dia === "Sábado") return "Sabado";
+        return dia;
+    }
+
+    // ============================
+    // FUNÇÕES AUXILIARES
+    // ============================
+    function formataHora(horaStr) {
+        if (!horaStr) return '';
+        const partes = horaStr.split(':');
+        return partes[0] + ':' + partes[1];
+    }
+
+    // Persistência dos dias via localStorage
+    function saveDiasSelecionados() {
+        if (idAnoLetivoSelecionado && idNivelEnsinoSelecionado && idTurnoSelecionado) {
+            const key = `horariosTreinoDias-${idAnoLetivoSelecionado}-${idNivelEnsinoSelecionado}-${idTurnoSelecionado}`;
+            localStorage.setItem(key, JSON.stringify(diasSelecionados));
+        }
+    }
+    function loadDiasSelecionadosFromStorage() {
+        if (idAnoLetivoSelecionado && idNivelEnsinoSelecionado && idTurnoSelecionado) {
+            const key = `horariosTreinoDias-${idAnoLetivoSelecionado}-${idNivelEnsinoSelecionado}-${idTurnoSelecionado}`;
+            const stored = localStorage.getItem(key);
+            if (stored) {
+                try {
+                    diasSelecionados = JSON.parse(stored);
+                } catch(e) { }
+            }
+        }
+    }
+
+    // Efeitos de modal (fade e slide)
+    function openModal(modalEl) {
+        modalEl.style.display = 'block';
+        modalEl.classList.remove('fade-out');
+        modalEl.classList.add('fade-in');
+        const content = modalEl.querySelector('.modal-content');
+        content.classList.remove('slide-up');
+        content.classList.add('slide-down');
+    }
+    function closeModal(modalEl) {
+        const content = modalEl.querySelector('.modal-content');
+        content.classList.remove('slide-down');
+        content.classList.add('slide-up');
+        modalEl.classList.remove('fade-in');
+        modalEl.classList.add('fade-out');
+        setTimeout(() => {
+            modalEl.style.display = 'none';
+            content.classList.remove('slide-up');
+            modalEl.classList.remove('fade-out');
+        }, 300);
+    }
+
+    // ============================
+    // MODAL DE EXCLUSÃO (já existente)
+    // ============================
+    function handleCloseDeleteModal() {
+        closeModal(modalDelete);
+    }
+    closeDeleteModalEl.addEventListener('click', handleCloseDeleteModal);
+    cancelDeleteBtn.addEventListener('click', handleCloseDeleteModal);
+    confirmDeleteBtn.addEventListener('click', function() {
+        if (pendingDeleteId) {
+            const body = new URLSearchParams({ id_horario_escolinha: pendingDeleteId });
+            fetch('/horarios/app/controllers/horarios-treino/deleteHorariosTreino.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body
+            })
+            .then(r => r.json())
+            .then(response => {
+                if (response.status === 'success') {
+                    if (pendingDeleteContainer) {
+                        pendingDeleteContainer.remove();
+                    }
+                } else {
+                    alert(response.message);
+                }
+                handleCloseDeleteModal();
+            })
+            .catch(err => console.error(err));
+        }
+    });
+
+    // ============================
+    // 1) CARREGAR ANOS LETIVOS
+    // ============================
+    async function loadAnoLetivo() {
+        try {
+            const resp = await fetch('/horarios/app/controllers/ano-letivo/listAnoLetivo.php');
+            const data = await resp.json();
+            if (data.status === 'success') {
+                data.data.forEach(ano => {
+                    const opt = document.createElement('option');
+                    opt.value = ano.id_ano_letivo;
+                    opt.textContent = ano.ano;
+                    selectAnoLetivo.appendChild(opt);
+                });
+            }
+        } catch (err) {
+            console.error('Erro ao carregar anos letivos:', err);
+        }
+    }
+    selectAnoLetivo.addEventListener('change', function() {
+        idAnoLetivoSelecionado = this.value;
+        resetNivelEnsino();
+        resetTurno();
+        if (idAnoLetivoSelecionado) {
+            loadNivelEnsinoEscolinhas();
+        }
+    });
+
+    // ============================
+    // 2) CARREGAR NÍVEL "ESCOLINHAS"
+    // ============================
+    async function loadNivelEnsinoEscolinhas() {
+        try {
+            const url = `/horarios/app/controllers/nivel-ensino/listNivelEnsinoByUserEscolinhas.php`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            selectNivelEnsino.innerHTML = '<option value="">-- Selecione o Nível --</option>';
+            if (data.status === 'success') {
+                const nivelEscolinhas = data.data.find(n =>
+                    n.nome_nivel_ensino.toLowerCase().includes('escolinhas')
+                );
+                if (nivelEscolinhas) {
+                    selectNivelEnsino.disabled = false;
+                    const opt = document.createElement('option');
+                    opt.value = nivelEscolinhas.id_nivel_ensino;
+                    opt.textContent = nivelEscolinhas.nome_nivel_ensino;
+                    selectNivelEnsino.appendChild(opt);
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao carregar nível escolinhas:', err);
+        }
+    }
+    selectNivelEnsino.addEventListener('change', function() {
+        idNivelEnsinoSelecionado = this.value;
+        resetTurno();
+        if (idNivelEnsinoSelecionado) {
+            loadTurnos();
+        }
+    });
+
+    // ============================
+    // 3) CARREGAR TURNOS
+    // ============================
+    async function loadTurnos() {
+        try {
+            const resp = await fetch('/horarios/app/controllers/turno/listTurno.php');
+            const data = await resp.json();
+            selectTurno.innerHTML = '<option value="">-- Selecione o Turno --</option>';
+            if (data.status === 'success') {
+                data.data.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id_turno;
+                    opt.textContent = t.nome_turno;
+                    selectTurno.appendChild(opt);
+                });
+                selectTurno.disabled = false;
+            }
+        } catch (err) {
+            console.error('Erro ao carregar turnos:', err);
+        }
+    }
+    selectTurno.addEventListener('change', function() {
+        idTurnoSelecionado = this.value;
+        btnSelectDays.disabled = !idTurnoSelecionado;
+        if (idTurnoSelecionado) {
+            loadDiasSelecionadosFromStorage();
+            autoLoadDias();
+        }
+    });
+
+    // ============================
+    // 4) MODAL "SELECIONAR DIAS"
+    // ============================
+    btnSelectDays.addEventListener('click', function() {
+        if (!idAnoLetivoSelecionado || !idNivelEnsinoSelecionado || !idTurnoSelecionado) return;
+        openModal(modalDiasSemana);
+        openModalDias();
+    });
+    function openModalDias() {
+        const dias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+        diasCheckboxes.innerHTML = '';
+        dias.forEach(d => {
+            const label = document.createElement('label');
+            label.classList.add('radio-like');
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = d;
+            if (diasSelecionados.includes(d)) {
+                cb.checked = true;
+            }
+            const span = document.createElement('span');
+            span.textContent = d;
+
+            label.appendChild(cb);
+            label.appendChild(span);
+            diasCheckboxes.appendChild(label);
+        });
+    }
+    function closeModalDias() {
+        closeModal(modalDiasSemana);
+    }
+    closeModalDiasBtn.addEventListener('click', closeModalDias);
+    btnCancelDias.addEventListener('click', closeModalDias);
+
+    btnOkDias.addEventListener('click', function() {
+        const oldDiasSelecionados = [...diasSelecionados];
+        const cbs = diasCheckboxes.querySelectorAll('input[type="checkbox"]');
+        const newDiasSelecionados = [];
+        cbs.forEach(cb => {
+            if (cb.checked) newDiasSelecionados.push(cb.value);
+        });
+        const removedDias = oldDiasSelecionados.filter(day => !newDiasSelecionados.includes(day));
+        if (removedDias.length > 0) {
+            if (!confirm("Tem certeza que quer remover o(s) dia(s): " + removedDias.join(', ') + "? As aulas desses dias serão deletadas.")) {
+                return;
+            }
+        }
+        diasSelecionados = newDiasSelecionados;
+        saveDiasSelecionados();
+        closeModalDias();
+        if (diasSelecionados.length > 0) {
+            montarDiasSelecionados();
+        } else {
+            contentDataTreino.style.display = 'none';
+        }
+    });
+
+    // ============================
+    // 5) MONTAR A GRADE DE DIAS
+    // ============================
+    function montarDiasSelecionados() {
+        diasSelecionadosContainer.innerHTML = '';
+
+        const table = document.createElement('table');
+        table.classList.add('tabela-horarios');
+
+        // Cabeçalho
+        const thead = document.createElement('thead');
+        const trHead = document.createElement('tr');
+
+        diasSelecionados.forEach(d => {
+            const th = document.createElement('th');
+            // Dia em negrito
+            const dayLabel = document.createElement('strong');
+            dayLabel.textContent = d;
+            th.appendChild(dayLabel);
+
+            // Botão "Adicionar"
+            const btnAdd = document.createElement('button');
+            btnAdd.textContent = 'Adicionar';
+            btnAdd.classList.add('btn-add-treino');
+            btnAdd.style.marginLeft = '10px';
+            btnAdd.addEventListener('click', () => openModalHorarioTreino(d));
+            th.appendChild(btnAdd);
+
+            trHead.appendChild(th);
+        });
+        thead.appendChild(trHead);
+        table.appendChild(thead);
+
+        // Corpo: uma linha com as células
+        const tbody = document.createElement('tbody');
+        const trBody = document.createElement('tr');
+        diasSelecionados.forEach(d => {
+            const td = document.createElement('td');
+            const listContainer = document.createElement('div');
+            // Usa toDisplayDia(d) para manter consistência
+            listContainer.id = `lista-${toDisplayDia(d)}`;
+            listContainer.style.display = 'flex';
+            listContainer.style.flexDirection = 'column';
+            td.appendChild(listContainer);
+
+            trBody.appendChild(td);
+        });
+        tbody.appendChild(trBody);
+        table.appendChild(tbody);
+
+        diasSelecionadosContainer.appendChild(table);
+        contentDataTreino.style.display = 'block';
+
+        // Limpa e carrega os horários
+        carregarHorariosTreinoDoBanco();
+    }
+
+    // ============================
+    // 6) AUTO-LOAD DOS DIAS EXISTENTES
+    // ============================
+    async function autoLoadDias() {
+        if (!idAnoLetivoSelecionado || !idNivelEnsinoSelecionado || !idTurnoSelecionado) return;
+        try {
+            const url = `/horarios/app/controllers/horarios-treino/listHorariosTreinoByAnoLetivo.php` +
+                `?id_ano_letivo=${idAnoLetivoSelecionado}&id_nivel_ensino=${idNivelEnsinoSelecionado}&id_turno=${idTurnoSelecionado}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data.status === 'success' && data.data.length > 0) {
+                const diasEncontrados = [...new Set(data.data.map(reg => toDisplayDia(reg.dia_semana)))];
+                diasSelecionados = diasEncontrados;
+                saveDiasSelecionados();
+                montarDiasSelecionados();
+            } else {
+                if (diasSelecionados.length > 0) {
+                    montarDiasSelecionados();
+                } else {
+                    contentDataTreino.style.display = 'none';
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao carregar dias automaticamente:', err);
+        }
+    }
+
+    // ============================
+    // 7) CARREGAR HORÁRIOS DO BANCO
+    // ============================
+    async function carregarHorariosTreinoDoBanco() {
+        if (!idAnoLetivoSelecionado || !idNivelEnsinoSelecionado || !idTurnoSelecionado) return;
+        const url = `/horarios/app/controllers/horarios-treino/listHorariosTreinoByAnoLetivo.php` +
+            `?id_ano_letivo=${idAnoLetivoSelecionado}&id_nivel_ensino=${idNivelEnsinoSelecionado}&id_turno=${idTurnoSelecionado}`;
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data.status === 'success') {
+                // Limpa cada container
+                diasSelecionados.forEach(d => {
+                    const cont = document.getElementById(`lista-${toDisplayDia(d)}`);
+                    if (cont) cont.innerHTML = '';
+                });
+                // Renderiza cada registro
+                data.data.forEach(reg => {
+                    const diaExibicao = toDisplayDia(reg.dia_semana);
+                    const container = document.getElementById(`lista-${diaExibicao}`);
+                    if (container) {
+                        renderHorarioNoDia(reg, container);
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('Erro ao carregar horários de treino:', err);
+        }
+    }
+
+    function renderHorarioNoDia(horarioObj, container) {
+        const box = document.createElement('div');
+        box.classList.add('horario-box');
+
+        // Exibe os valores com os rótulos (exceto para a modalidade, que aparece apenas o valor)
+        box.innerHTML = `
+            <p><strong>${horarioObj.nome_modalidade}</strong></p>
+            <p>Categoria: <strong>${horarioObj.nome_categoria}</strong></p>
+            <p>Professor: <strong>${horarioObj.nome_professor}</strong></p>
+            <p>Horário: <strong>${formataHora(horarioObj.hora_inicio)} - ${formataHora(horarioObj.hora_fim)}</strong></p>
+        `;
+
+        // Botões
+        const btnEdit = document.createElement('button');
+        btnEdit.textContent = 'Editar';
+        btnEdit.classList.add('btn-edit-treino');
+        btnEdit.addEventListener('click', () => {
+            openModalHorarioTreino(toDisplayDia(horarioObj.dia_semana), horarioObj);
+        });
+
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Excluir';
+        btnDel.classList.add('btn-delete-treino');
+        btnDel.style.marginLeft = '8px';
+        btnDel.addEventListener('click', () => {
+            pendingDeleteId = horarioObj.id_horario_escolinha;
+            pendingDeleteContainer = box;
+            openModal(modalDelete);
+        });
+
+        const btnRow = document.createElement('div');
+        btnRow.style.marginTop = '10px';
+        btnRow.appendChild(btnEdit);
+        btnRow.appendChild(btnDel);
+        box.appendChild(btnRow);
+
+        container.prepend(box);
+    }
+
+    // ============================
+    // 8) MODAL ADICIONAR/EDITAR HORÁRIO DE TREINO
+    // ============================
+    function openModalHorarioTreino(diaSemana, horarioObj = null) {
+        // Limpa os campos
+        horarioTreinoIdInput.value = '';
+        selectModalidade.value = '';
+        selectCategoria.value = '';
+        selectProfessor.value = '';
+        inputHoraInicio.value = '';
+        inputHoraFim.value = '';
+        currentDiaSemana = diaSemana;
+        currentEditId = null;
+
+        if (horarioObj) {
+            currentEditId = horarioObj.id_horario_escolinha;
+            horarioTreinoIdInput.value = currentEditId;
+        }
+        loadModalidades().then(() => {
+            if (horarioObj) {
+                selectModalidade.value = horarioObj.id_modalidade;
+            }
+            selectModalidade.disabled = false;
+        });
+        selectModalidade.addEventListener('change', handleModalidadeChange);
+        selectCategoria.addEventListener('change', handleCategoriaChange);
+
+        if (horarioObj) {
+            selectCategoria.disabled = false;
+            selectProfessor.disabled = false;
+            inputHoraInicio.disabled = false;
+            inputHoraFim.disabled = false;
+
+            loadCategorias(horarioObj.id_modalidade).then(() => {
+                selectCategoria.value = horarioObj.id_categoria;
+            });
+            loadProfessores(horarioObj.id_categoria).then(() => {
+                selectProfessor.value = horarioObj.id_professor;
+            });
+            inputHoraInicio.value = horarioObj.hora_inicio;
+            inputHoraFim.value = horarioObj.hora_fim;
+        }
+
+        openModal(modalHorarioTreino);
+    }
+    function closeModalHorarioTreino() {
+        closeModal(modalHorarioTreino);
+    }
+    closeModalHorario.addEventListener('click', closeModalHorarioTreino);
+    btnCancelarTreino.addEventListener('click', closeModalHorarioTreino);
+
+    // ============================
+    // 9) CARREGAR MODALIDADE, CATEGORIA, PROFESSOR
+    // ============================
+    async function loadModalidades() {
+        try {
+            const resp = await fetch('/horarios/app/controllers/modalidade/listModalidade.php');
+            const data = await resp.json();
+            selectModalidade.innerHTML = '<option value="">-- Selecione --</option>';
+            if (data.status === 'success') {
+                data.data.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.id_modalidade;
+                    opt.textContent = m.nome_modalidade;
+                    selectModalidade.appendChild(opt);
+                });
+            }
+        } catch (err) {
+            console.error('Erro ao carregar modalidades:', err);
+        }
+    }
+    async function loadCategorias(idModalidade) {
+        if (!idModalidade) return;
+        try {
+            const url = `/horarios/app/controllers/categoria/listCategoriaByModalidade.php?id_modalidade=${idModalidade}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            selectCategoria.innerHTML = '<option value="">-- Selecione --</option>';
+            if (data.status === 'success') {
+                data.data.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id_categoria;
+                    opt.textContent = c.nome_categoria;
+                    selectCategoria.appendChild(opt);
+                });
+            }
+        } catch (err) {
+            console.error('Erro ao carregar categorias:', err);
+        }
+    }
+    async function loadProfessores(idCategoria) {
+        if (!idCategoria) return;
+        try {
+            const url = `/horarios/app/controllers/professor-categoria/listProfessoresByCategoria.php?id_categoria=${idCategoria}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            selectProfessor.innerHTML = '<option value="">-- Selecione --</option>';
+            if (data.status === 'success') {
+                data.data.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id_professor;
+                    opt.textContent = p.nome_exibicao || p.nome_completo;
+                    selectProfessor.appendChild(opt);
+                });
+            }
+        } catch (err) {
+            console.error('Erro ao carregar professores:', err);
+        }
+    }
+    async function handleModalidadeChange() {
+        const idMod = selectModalidade.value;
+        if (!idMod) {
+            selectCategoria.disabled = true;
+            selectProfessor.disabled = true;
+            inputHoraInicio.disabled = true;
+            inputHoraFim.disabled = true;
+            return;
+        }
+        selectCategoria.disabled = false;
+        await loadCategorias(idMod);
+    }
+    async function handleCategoriaChange() {
+        const idCat = selectCategoria.value;
+        if (!idCat) {
+            selectProfessor.disabled = true;
+            inputHoraInicio.disabled = true;
+            inputHoraFim.disabled = true;
+            return;
+        }
+        selectProfessor.disabled = false;
+        await loadProfessores(idCat);
+        inputHoraInicio.disabled = false;
+        inputHoraFim.disabled = false;
+    }
+
+    // ============================
+    // 10) SALVAR (INSERT/UPDATE)
+    // ============================
+    btnSalvarTreino.addEventListener('click', function() {
+        const idHorarioEscolinha = horarioTreinoIdInput.value;
+        const idModalidade = selectModalidade.value;
+        const idCategoria = selectCategoria.value;
+        const idProfessor = selectProfessor.value;
+        const horaInicio = inputHoraInicio.value;
+        const horaFim = inputHoraFim.value;
+
+        if (!idModalidade || !idCategoria || !idProfessor || !horaInicio || !horaFim) {
+            alert('Preencha todos os campos.');
+            return;
+        }
+        if (horaFim < horaInicio) {
+            alert('Horário de fim não pode ser menor que o horário de início.');
+            return;
+        }
+
+        const body = new URLSearchParams({
+            id_ano_letivo: idAnoLetivoSelecionado,
+            id_nivel_ensino: idNivelEnsinoSelecionado,
+            id_modalidade: idModalidade,
+            id_categoria: idCategoria,
+            id_professor: idProfessor,
+            id_turno: idTurnoSelecionado,
+            dia_semana: toDbDia(currentDiaSemana),
+            hora_inicio: horaInicio,
+            hora_fim: horaFim
+        });
+
+        if (idHorarioEscolinha) {
+            // Update
+            body.append('id_horario_escolinha', idHorarioEscolinha);
+            fetch('/horarios/app/controllers/horarios-treino/updateHorariosTreino.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body
+            })
+            .then(r => r.json())
+            .then(response => {
+                if (response.status === 'success') {
+                    alert('Horário atualizado com sucesso!');
+                    closeModalHorarioTreino();
+                    atualizarDiaNaTela(currentDiaSemana);
+                } else {
+                    alert(response.message);
+                }
+            })
+            .catch(err => console.error(err));
+        } else {
+            // Insert
+            fetch('/horarios/app/controllers/horarios-treino/insertHorariosTreino.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body
+            })
+            .then(r => r.json())
+            .then(response => {
+                if (response.status === 'success') {
+                    alert('Horário cadastrado com sucesso!');
+                    closeModalHorarioTreino();
+                    atualizarDiaNaTela(currentDiaSemana);
+                } else {
+                    alert(response.message);
+                }
+            })
+            .catch(err => console.error(err));
+        }
+    });
+
+    function atualizarDiaNaTela(dia) {
+        const dayDisplay = toDisplayDia(dia);
+        const container = document.getElementById(`lista-${dayDisplay}`);
+        if (container) {
+            container.innerHTML = '';
+        }
+        carregarHorariosTreinoDoBanco();
+    }
+
+    // ============================
+    // 11) IMPRIMIR (SEM MODAL)
+    // ============================
+    btnImprimir.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (!idAnoLetivoSelecionado || !idNivelEnsinoSelecionado || !idTurnoSelecionado) {
+            alert("Selecione um turno para imprimir o horário.");
+            return;
+        }
+        // Caso esteja tudo selecionado, abre diretamente a página de impressão/relatório:
+        let url = `/horarios/app/views/horarios-treino.php?id_ano_letivo=${idAnoLetivoSelecionado}&id_nivel_ensino=${idNivelEnsinoSelecionado}&id_turno=${idTurnoSelecionado}`;
+        window.open(url, '_blank');
+    });
+
+    // ============================
+    // FUNÇÕES DE RESET
+    // ============================
+    function resetNivelEnsino() {
+        selectNivelEnsino.innerHTML = '<option value="">-- Selecione o Nível --</option>';
+        selectNivelEnsino.disabled = true;
+        idNivelEnsinoSelecionado = null;
+    }
+    function resetTurno() {
+        selectTurno.innerHTML = '<option value="">-- Selecione o Turno --</option>';
+        selectTurno.disabled = true;
+        idTurnoSelecionado = null;
+        btnSelectDays.disabled = true;
+    }
+
+    // ============================
+    // INICIAR
+    // ============================
+    loadAnoLetivo();
+});

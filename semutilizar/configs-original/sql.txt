@@ -1,0 +1,222 @@
+ALTER TABLE log_atividade MODIFY id_usuario INT NULL;
+
+-- 1) Tabela: usuario
+CREATE TABLE IF NOT EXISTS usuario (
+  id_usuario INT(11) NOT NULL AUTO_INCREMENT,
+  nome_usuario VARCHAR(50) NOT NULL,
+  email_usuario VARCHAR(100) NOT NULL,
+  senha_usuario VARCHAR(255) NOT NULL,
+  situacao_usuario ENUM('Ativo','Inativo') NOT NULL DEFAULT 'Ativo',
+  data_cadastro_usuario DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  imagem_usuario VARCHAR(255) DEFAULT NULL, 
+  data_alteracao_senha_usuario DATETIME DEFAULT NULL,
+  PRIMARY KEY (id_usuario),
+  UNIQUE KEY (email_usuario)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 2) Tabela: log_atividade (única que mantém o id_usuario para log)
+CREATE TABLE IF NOT EXISTS log_atividade (
+  id_log INT(11) NOT NULL AUTO_INCREMENT,
+  id_usuario INT(11) NOT NULL,
+  nome_usuario VARCHAR(255) DEFAULT NULL,
+  ip_usuario VARCHAR(50) NOT NULL,
+  status_atividade ENUM('sucesso_login','falha_login','acesso_negado_login','saida_sistema') NOT NULL,
+  data_hora_atividade DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id_log),
+  CONSTRAINT fk_log_atividade_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 3) Tabela: instituicao (id_usuario removido)
+CREATE TABLE IF NOT EXISTS instituicao (
+  id_instituicao INT(11) NOT NULL AUTO_INCREMENT,
+  nome_instituicao VARCHAR(255) NOT NULL,
+  cnpj_instituicao VARCHAR(18) NOT NULL,
+  endereco_instituicao VARCHAR(255) DEFAULT NULL,
+  telefone_instituicao VARCHAR(20) DEFAULT NULL,
+  email_instituicao VARCHAR(100) DEFAULT NULL,
+  imagem_instituicao VARCHAR(255) DEFAULT NULL,  
+  data_cadastro_instituicao DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id_instituicao)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 4) Tabela: nivel_ensino (id_usuario removido)
+CREATE TABLE IF NOT EXISTS nivel_ensino (
+  id_nivel_ensino INT AUTO_INCREMENT PRIMARY KEY,
+  nome_nivel_ensino VARCHAR(100) NOT NULL,
+  data_cadastro_nivel DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 5) Tabela: serie (id_usuario removido)
+CREATE TABLE IF NOT EXISTS serie (
+  id_serie INT AUTO_INCREMENT PRIMARY KEY,
+  id_nivel_ensino INT NOT NULL,
+  nome_serie VARCHAR(50) NOT NULL,
+  total_aulas_semana INT NOT NULL,
+  data_cadastro_serie DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_serie_nivel_ensino FOREIGN KEY (id_nivel_ensino) REFERENCES nivel_ensino (id_nivel_ensino)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 6) Tabela: disciplina (id_usuario removido)
+CREATE TABLE IF NOT EXISTS disciplina (
+  id_disciplina INT AUTO_INCREMENT PRIMARY KEY,
+  nome_disciplina VARCHAR(100) NOT NULL,
+  sigla_disciplina VARCHAR(20) NOT NULL,
+  data_cadastro_disciplina DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 7) Tabela: serie_disciplinas
+CREATE TABLE IF NOT EXISTS serie_disciplinas (
+  id_serie INT NOT NULL,
+  id_disciplina INT NOT NULL,
+  aulas_semana INT NOT NULL,
+  PRIMARY KEY (id_serie, id_disciplina),
+  CONSTRAINT fk_sd_serie FOREIGN KEY (id_serie) REFERENCES serie (id_serie),
+  CONSTRAINT fk_sd_disciplina FOREIGN KEY (id_disciplina) REFERENCES disciplina (id_disciplina)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 8) Tabela: professor (id_usuario removido)
+CREATE TABLE IF NOT EXISTS professor (
+  id_professor INT AUTO_INCREMENT PRIMARY KEY,
+  nome_completo VARCHAR(150) NOT NULL,
+  nome_exibicao VARCHAR(100) DEFAULT NULL,
+  telefone VARCHAR(20) DEFAULT NULL,
+  sexo ENUM('Masculino', 'Feminino', 'Outro') NOT NULL DEFAULT 'Masculino',
+  limite_aulas_fixa_semana INT NOT NULL DEFAULT 0,
+  data_cadastro_professor DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 9) Tabela: professor_disciplinas
+CREATE TABLE IF NOT EXISTS professor_disciplinas (
+  id_professor INT NOT NULL,
+  id_disciplina INT NOT NULL,
+  PRIMARY KEY (id_professor, id_disciplina),
+  CONSTRAINT fk_pd_professor FOREIGN KEY (id_professor) REFERENCES professor (id_professor),
+  CONSTRAINT fk_pd_disciplina FOREIGN KEY (id_disciplina) REFERENCES disciplina (id_disciplina)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 10) Tabela: turno (id_usuario removido)
+CREATE TABLE IF NOT EXISTS turno (
+  id_turno INT(11) NOT NULL AUTO_INCREMENT,
+  nome_turno VARCHAR(100) NOT NULL,
+  descricao_turno VARCHAR(255) DEFAULT NULL,
+  horario_inicio_turno TIME NOT NULL,
+  horario_fim_turno TIME NOT NULL,
+  data_cadastro_turno DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id_turno)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 11) Tabela: professor_turnos
+CREATE TABLE IF NOT EXISTS professor_turnos (
+  id_professor INT NOT NULL,
+  id_turno INT NOT NULL,
+  PRIMARY KEY (id_professor, id_turno),
+  CONSTRAINT fk_pt_professor FOREIGN KEY (id_professor) REFERENCES professor (id_professor),
+  CONSTRAINT fk_pt_turno FOREIGN KEY (id_turno) REFERENCES turno (id_turno)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 12)-- Tabela: professor_restricoes (versão modificada para incluir o ano letivo)
+CREATE TABLE IF NOT EXISTS professor_restricoes (
+  id_professor INT NOT NULL,
+  id_ano_letivo INT NOT NULL,
+  dia_semana ENUM('Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado') NOT NULL,
+  numero_aula INT NOT NULL,
+  PRIMARY KEY (id_professor, id_ano_letivo, dia_semana, numero_aula),
+  CONSTRAINT fk_pr_professor FOREIGN KEY (id_professor) REFERENCES professor (id_professor),
+  CONSTRAINT fk_pr_ano_letivo FOREIGN KEY (id_ano_letivo) REFERENCES ano_letivo (id_ano_letivo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 13) Tabela: ano_letivo (id_usuario removido)
+CREATE TABLE IF NOT EXISTS ano_letivo (
+  id_ano_letivo INT AUTO_INCREMENT PRIMARY KEY,
+  ano YEAR NOT NULL,
+  data_inicio DATE NOT NULL,
+  data_fim DATE NOT NULL,
+  data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY (ano)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 14) Tabela: turma (id_usuario removido)
+CREATE TABLE IF NOT EXISTS turma (
+  id_turma INT AUTO_INCREMENT PRIMARY KEY,
+  id_ano_letivo INT NOT NULL,
+  id_serie INT NOT NULL,
+  id_turno INT NOT NULL,
+  nome_turma VARCHAR(50) NOT NULL,
+  intervalos_por_dia INT NOT NULL,
+  intervalos_positions VARCHAR(20) NOT NULL,
+  data_cadastro_turma DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unq_turma_ano (id_serie, id_turno, nome_turma, id_ano_letivo),
+  CONSTRAINT fk_turma_ano_letivo FOREIGN KEY (id_ano_letivo) REFERENCES ano_letivo (id_ano_letivo),
+  CONSTRAINT fk_turma_serie FOREIGN KEY (id_serie) REFERENCES serie (id_serie),
+  CONSTRAINT fk_turma_turno FOREIGN KEY (id_turno) REFERENCES turno (id_turno)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 15) Tabela: turno_dias
+CREATE TABLE IF NOT EXISTS turno_dias (
+  id_turno_dia INT AUTO_INCREMENT PRIMARY KEY,
+  id_turno INT NOT NULL,
+  dia_semana ENUM('Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado') NOT NULL,
+  aulas_no_dia INT NOT NULL DEFAULT 0,
+  CONSTRAINT fk_turno_dias_turno FOREIGN KEY (id_turno) REFERENCES turno (id_turno)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 16) Tabela: horario (id_usuario removido)
+CREATE TABLE IF NOT EXISTS horario (
+  id_horario INT AUTO_INCREMENT PRIMARY KEY,
+  id_turma INT NOT NULL,
+  dia_semana ENUM('Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado') NOT NULL,
+  numero_aula INT NOT NULL,
+  id_disciplina INT NOT NULL,
+  id_professor INT NOT NULL,
+  data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unq_turma_dia_aula (id_turma, dia_semana, numero_aula),
+  CONSTRAINT fk_horario_turma FOREIGN KEY (id_turma) REFERENCES turma (id_turma),
+  CONSTRAINT fk_horario_disciplina FOREIGN KEY (id_disciplina) REFERENCES disciplina (id_disciplina),
+  CONSTRAINT fk_horario_professor FOREIGN KEY (id_professor) REFERENCES professor (id_professor)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 17) Tabela: historico_horario
+CREATE TABLE IF NOT EXISTS historico_horario (
+  id_historico INT AUTO_INCREMENT PRIMARY KEY,
+  id_horario_original INT NOT NULL,
+  id_turma INT NOT NULL,
+  id_ano_letivo INT NOT NULL,
+  dia_semana ENUM('Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado') NOT NULL,
+  numero_aula INT NOT NULL,
+  id_disciplina INT NOT NULL,
+  id_professor INT NOT NULL,
+  data_criacao_original DATETIME NOT NULL,
+  data_arquivamento DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX (id_ano_letivo),
+  CONSTRAINT fk_historico_ano_letivo FOREIGN KEY (id_ano_letivo) REFERENCES ano_letivo (id_ano_letivo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 18) Tabela: professor_disciplinas_turmas
+CREATE TABLE IF NOT EXISTS professor_disciplinas_turmas (
+  id_professor INT NOT NULL,
+  id_disciplina INT NOT NULL,
+  id_turma INT NOT NULL,
+  PRIMARY KEY (id_professor, id_disciplina, id_turma),
+  CONSTRAINT fk_pdt_professor FOREIGN KEY (id_professor) REFERENCES professor(id_professor),
+  CONSTRAINT fk_pdt_disciplina FOREIGN KEY (id_disciplina) REFERENCES disciplina(id_disciplina),
+  CONSTRAINT fk_pdt_turma FOREIGN KEY (id_turma) REFERENCES turma(id_turma)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Adicionar a coluna imagem_usuario na tabela usuario
+ALTER TABLE usuario
+ADD imagem_usuario VARCHAR(255) DEFAULT NULL;
+
+-- Ajustar a definição da coluna situacao_usuario para garantir que as opções comecem com letra maiúscula
+ALTER TABLE usuario
+MODIFY COLUMN situacao_usuario ENUM('Ativo', 'Inativo') NOT NULL DEFAULT 'Ativo';
+
+-- 19) Tabela: usuario_niveis
+CREATE TABLE `usuario_niveis` (
+  `id_usuario` int(11) NOT NULL,
+  `id_nivel_ensino` int(11) NOT NULL,
+  `data_cadastro` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_usuario`, `id_nivel_ensino`),
+  CONSTRAINT `fk_usuario_niveis_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`),
+  CONSTRAINT `fk_usuario_niveis_nivel` FOREIGN KEY (`id_nivel_ensino`) REFERENCES `nivel_ensino` (`id_nivel_ensino`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+

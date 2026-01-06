@@ -1,0 +1,18 @@
+Faixa de IP: 10.147.20.*
+
+Network ID: e5cd7a9e1c113f11
+
+Adicionar o repositório e instalar o ZeroTier:
+curl -s https://install.zerotier.com | sudo bash
+
+Ingressar na rede no Linux:
+sudo zerotier-cli join <ID_da_rede>
+
+SRV Horários 
+IP: 10.147.20.215
+
+Diézare Desktop Casa
+IP: 10.147.20.137
+
+
+

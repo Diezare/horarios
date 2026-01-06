@@ -1,0 +1,157 @@
+<?php
+// /horarios/app/views/horarios-treino-individual.php
+require_once __DIR__ . '/../../configs/init.php';
+require_once __DIR__ . '/../../libs/fpdf/fpdf.php';
+
+$id_horario = isset($_GET['id_horario_escolinha']) ? (int)$_GET['id_horario_escolinha'] : 0;
+if (!$id_horario) {
+    die('ID de horário inválido para gerar PDF individual.');
+}
+
+// Opcional: Se você quiser permitir trocar retrato/paisagem por GET (?orient=p/r):
+$orientation = isset($_GET['orient']) ? $_GET['orient'] : 'r';
+$orientation = ($orientation === 'p') ? 'L' : 'P';
+
+try {
+    $sql = "
+        SELECT he.*,
+               a.ano,
+               ne.nome_nivel_ensino,
+               mo.nome_modalidade,
+               c.nome_categoria,
+               COALESCE(p.nome_exibicao, p.nome_completo) AS nome_professor,
+               t.nome_turno
+          FROM horario_escolinha he
+          JOIN ano_letivo       a  ON he.id_ano_letivo   = a.id_ano_letivo
+          JOIN nivel_ensino     ne ON he.id_nivel_ensino = ne.id_nivel_ensino
+          JOIN modalidade       mo ON he.id_modalidade   = mo.id_modalidade
+          JOIN categoria        c  ON he.id_categoria    = c.id_categoria
+          JOIN professor        p  ON he.id_professor    = p.id_professor
+          JOIN turno            t  ON he.id_turno        = t.id_turno
+         WHERE he.id_horario_escolinha = :id
+         ORDER BY 
+           FIELD(he.dia_semana,'Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado'),
+           he.hora_inicio
+    ";
+    $stmt = $pdo->prepare($sql);
+    $stmt->bindValue(':id', $id_horario, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (Exception $e) {
+    die('Erro ao buscar dados: ' . $e->getMessage());
+}
+
+if (empty($rows)) {
+    die('Nenhum registro encontrado para este horário.');
+}
+
+// Apenas para exibir no cabeçalho
+$nomeTurno = $rows[0]['nome_turno'] ?? '';
+$anoLetivo = $rows[0]['ano']        ?? '';
+
+/**
+ * Se por algum motivo existirem vários registros
+ * com o mesmo id_horario_escolinha (o que é raro),
+ * você ainda assim imprimirá todos em uma tabela normal.
+ */
+
+// ===========================================
+// CLASSE PDF
+// ===========================================
+class PDFHorariosTreinoIndividual extends FPDF
+{
+    public function Header()
+    {
+        global $pdo, $nomeTurno, $anoLetivo;
+
+        // Carrega instituição
+        $stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
+        $inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
+
+        // LOGO
+        if ($inst && !empty($inst['imagem_instituicao'])) {
+            $logoPath = LOGO_PATH . '/' . basename($inst['imagem_instituicao']);
+            if (file_exists($logoPath)) {
+                // Exemplo de dimensionamento
+                $desiredSize = 90 * 25.4 / 96; // ~33,9 mm
+                $pageWidth   = $this->GetPageWidth();
+                $x = ($pageWidth - $desiredSize) / 2;
+                $this->Image($logoPath, $x, 10, $desiredSize, $desiredSize);
+            }
+        }
+
+        // Nome da Instituição (opcional)
+        $this->Ln(25);
+        $this->SetFont('Arial','B',16);
+        if (!empty($inst['nome_instituicao'])) {
+            $txtInst = mb_convert_encoding($inst['nome_instituicao'], 'ISO-8859-1','UTF-8');
+            $this->Cell(0, 10, $txtInst, 0, 1, 'C');
+        }
+
+        // TÍTULO
+        $this->Ln(3);
+        $this->SetFont('Arial','B',14);
+        $txtHeader = 'Horário de Treino';
+        if ($nomeTurno) {
+            $txtHeader .= ' | ' . $nomeTurno;
+        }
+        if ($anoLetivo) {
+            $txtHeader .= ' | Ano: ' . $anoLetivo;
+        }
+        $this->Cell(0, 8, mb_convert_encoding($txtHeader, 'ISO-8859-1','UTF-8'), 0, 1, 'C');
+        $this->Ln(5);
+    }
+
+    public function Footer()
+    {
+        $this->SetY(-15);
+        $this->SetFont('Arial','I',8);
+        $txt = 'Impresso em: ' . date('d/m/Y H:i:s');
+        $this->Cell(0, 10, mb_convert_encoding($txt,'ISO-8859-1','UTF-8'), 0, 0, 'R');
+    }
+}
+
+// ===========================================
+// GERAR PDF
+// ===========================================
+$pdf = new PDFHorariosTreinoIndividual($orientation,'mm','A4');
+$pdf->SetTitle(mb_convert_encoding('Horário de Treino (Individual)','ISO-8859-1','UTF-8'));
+$pdf->AddPage();
+$pdf->SetFont('Arial','',9);
+
+// Cabeçalho da tabela
+$pdf->SetFont('Arial','B',9);
+$pdf->SetFillColor(220,220,220);
+$pdf->Cell(30,8, mb_convert_encoding('Dia','ISO-8859-1','UTF-8'),          1,0,'C',true);
+$pdf->Cell(30,8, mb_convert_encoding('Horário','ISO-8859-1','UTF-8'),     1,0,'C',true);
+$pdf->Cell(35,8, mb_convert_encoding('Modalidade','ISO-8859-1','UTF-8'),  1,0,'C',true);
+$pdf->Cell(35,8, mb_convert_encoding('Categoria','ISO-8859-1','UTF-8'),   1,0,'C',true);
+$pdf->Cell(60,8, mb_convert_encoding('Professor','ISO-8859-1','UTF-8'),   1,1,'C',true);
+$pdf->SetFont('Arial','',9);
+
+/**
+ * Agora imprimimos cada registro em uma única linha:
+ * Dia | Horário (08:00 - 09:30) | Modalidade | Categoria | Professor
+ */
+foreach ($rows as $r) {
+    $dia       = $r['dia_semana'] ?? '';
+    $horaI     = substr($r['hora_inicio'],0,5);
+    $horaF     = substr($r['hora_fim'],0,5);
+    $horario   = $horaI . ' - ' . $horaF;
+    $modalidade = $r['nome_modalidade'] ?? '';
+    $categoria  = $r['nome_categoria']  ?? '';
+    $professor  = $r['nome_professor']  ?? '';
+
+    // Linha da tabela
+    $pdf->Cell(30,8, mb_convert_encoding($dia,'ISO-8859-1','UTF-8'),     1,0,'C');
+    $pdf->Cell(30,8, $horario,                                           1,0,'C');
+    $pdf->Cell(35,8, mb_convert_encoding($modalidade,'ISO-8859-1','UTF-8'), 1,0,'C');
+    $pdf->Cell(35,8, mb_convert_encoding($categoria,'ISO-8859-1','UTF-8'),  1,0,'C');
+    $pdf->Cell(60,8, mb_convert_encoding($professor,'ISO-8859-1','UTF-8'),  1,1,'C');
+}
+
+$pdf->Ln(5);
+$pdf->Output();
+exit;
+?>

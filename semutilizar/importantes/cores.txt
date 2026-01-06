@@ -1,0 +1,17 @@
+#FF5733 - Um laranja vibrante
+
+#FFC300 - Um amarelo intenso
+
+#DAF7A6 - Um verde claro e vibrante
+
+#FF00FF - Um magenta brilhante
+
+#00FFFF - Um ciano vívido
+
+#8A84F4 - Um tom mais claro de azul para harmonizar com o #6358F8
+
+#FF4F63 - Um tom de rosa que complementa o vermelho #E50020
+
+#333333 - Um cinza escuro que pode ser usado em conjunto com o #000000
+
+#1E90FF

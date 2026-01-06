@@ -1,0 +1,262 @@
+<?php
+// app/views/horarios-turma.php
+require_once __DIR__ . '/../../configs/init.php';
+require_once __DIR__ . '/../../libs/fpdf/fpdf.php';
+
+// ---------------- Parâmetros do cabeçalho ----------------
+$LOGO_SIZE_MM = 15; // tamanho da logo em mm (largura=altura)
+$LOGO_GAP_MM  = 5;  // espaço entre logo e nome
+
+// ---------------- Parâmetros de entrada -------------------
+$id_turma   = isset($_GET['id_turma']) ? intval($_GET['id_turma']) : 0;
+$orientation = (isset($_GET['orient']) && $_GET['orient'] === 'Landscape') ? 'L' : 'P';
+
+if (!$id_turma) {
+    die('ID da turma não informado.');
+}
+
+class PDFHorariosTurma extends FPDF
+{
+    public $cMargin = 0; // padding interno das células
+
+    public function SetCellMargin($margin) { $this->cMargin = $margin; }
+
+    public function Footer()
+    {
+        $this->SetY(-15);
+        $this->SetFont('Arial','I',8);
+        // Esquerda: Página X (sem /N)
+        $this->Cell(0,10, iconv('UTF-8','ISO-8859-1','Página '.$this->PageNo()), 0, 0, 'L');
+        // Direita: data/hora impressão
+        $this->Cell(0,10, iconv('UTF-8','ISO-8859-1','Impresso em: '.date('d/m/Y H:i:s')), 0, 0, 'R');
+    }
+}
+
+// ---------------- Inicia PDF ----------------
+$pdf = new PDFHorariosTurma($orientation, 'mm', 'A4');
+$pdf->SetTitle('Horário da Turma', true);
+$pdf->AddPage();
+
+// 1) Cabeçalho padronizado: logo + nome da instituição na mesma linha
+$stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
+$inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
+
+$nomeInst = $inst ? ($inst['nome_instituicao'] ?? '') : '';
+$logoPath = ($inst && !empty($inst['imagem_instituicao'])) ? LOGO_PATH.'/'.basename($inst['imagem_instituicao']) : null;
+
+$pdf->SetY(12);
+$pdf->SetFont('Arial','B',14);
+$txt  = iconv('UTF-8','ISO-8859-1', $nomeInst);
+$txtW = $pdf->GetStringWidth($txt);
+$hasLogo = ($logoPath && file_exists($logoPath));
+$totalW  = $hasLogo ? ($LOGO_SIZE_MM + ($nomeInst ? $LOGO_GAP_MM : 0) + $txtW) : $txtW;
+$pageW   = $pdf->GetPageWidth();
+$x       = ($pageW - $totalW) / 2;
+$y       = $pdf->GetY();
+if ($hasLogo) {
+    $pdf->Image($logoPath, $x, $y-2, $LOGO_SIZE_MM, $LOGO_SIZE_MM);
+    $x += $LOGO_SIZE_MM + ($nomeInst ? $LOGO_GAP_MM : 0);
+}
+if ($nomeInst) {
+    $pdf->SetXY($x, $y);
+    $pdf->Cell($txtW, $LOGO_SIZE_MM, $txt, 0, 1, 'L');
+}
+$pdf->Ln(3);
+
+// 2) Dados da Turma
+$sqlTurma = "
+    SELECT 
+      t.*,
+      s.nome_serie,
+      a.ano,
+      n.nome_nivel_ensino,
+      turn.nome_turno,
+      t.intervalos_positions
+    FROM turma t
+    JOIN serie s ON t.id_serie = s.id_serie
+    JOIN nivel_ensino n ON s.id_nivel_ensino = n.id_nivel_ensino
+    JOIN ano_letivo a ON t.id_ano_letivo = a.id_ano_letivo
+    JOIN turno turn ON t.id_turno = turn.id_turno
+    WHERE t.id_turma = :id_turma
+    LIMIT 1
+";
+$stmtT = $pdo->prepare($sqlTurma);
+$stmtT->execute([':id_turma' => $id_turma]);
+$turma = $stmtT->fetch(PDO::FETCH_ASSOC);
+
+if (!$turma) {
+    $pdf->SetFont('Arial','B',14);
+    $pdf->Cell(0, 10, 'Turma não encontrada.', 0, 1, 'C');
+    $pdf->Output('I','HorarioDaTurma.pdf');
+    exit;
+}
+
+// 3) Linha informativa (padrão novo solicitado)
+$pdf->SetFont('Arial','B',12);
+$linhaInfo = sprintf(
+    "Ano Letivo %s | Horário da Turma: %s %s",
+    $turma['ano'],
+    $turma['nome_serie'],
+    $turma['nome_turma']
+);
+$pdf->Cell(0, 7, iconv('UTF-8','ISO-8859-1', $linhaInfo), 0, 1, 'C');
+$pdf->Ln(8);
+
+// 4) Buscar Horários
+$sqlHorarios = "
+    SELECT 
+        h.dia_semana,
+        h.numero_aula,
+        d.nome_disciplina,
+        p.nome_exibicao AS professor
+    FROM horario h
+    JOIN disciplina d ON h.id_disciplina = d.id_disciplina
+    JOIN professor  p ON h.id_professor = p.id_professor
+    WHERE h.id_turma = :id_turma
+    ORDER BY 
+       FIELD(h.dia_semana, 'Segunda','Terca','Quarta','Quinta','Sexta','Sabado','Domingo'),
+       h.numero_aula
+";
+$stmtH = $pdo->prepare($sqlHorarios);
+$stmtH->execute([':id_turma' => $id_turma]);
+$horariosRaw = $stmtH->fetchAll(PDO::FETCH_ASSOC);
+
+// 5) Preparar matriz de horários
+$dayMapping = [
+    'Segunda' => 'Segunda',
+    'Terca'   => 'Terça',
+    'Quarta'  => 'Quarta',
+    'Quinta'  => 'Quinta',
+    'Sexta'   => 'Sexta',
+    'Sabado'  => 'Sábado',
+    'Domingo' => 'Domingo',
+];
+
+// Buscar dias do turno
+$sqlDiasTurno = "
+    SELECT dia_semana, aulas_no_dia
+    FROM turno_dias
+    WHERE id_turno = :id_turno
+    ORDER BY FIELD(dia_semana, 'Segunda','Terca','Quarta','Quinta','Sexta','Sabado','Domingo')
+";
+$stmtDiasTurno = $pdo->prepare($sqlDiasTurno);
+$stmtDiasTurno->execute([':id_turno' => $turma['id_turno']]);
+$turnoDias = $stmtDiasTurno->fetchAll(PDO::FETCH_ASSOC);
+
+if (!$turnoDias) {
+    $pdf->SetFont('Arial','B',12);
+    $pdf->Cell(0, 12, 'Nenhum dia configurado para este turno.', 0, 1, 'C');
+    $pdf->Output('I','HorarioDaTurma.pdf');
+    exit;
+}
+
+$diasRelatorio = [];
+$matrix = [];
+$maxPorDia = [];
+
+foreach ($turnoDias as $td) {
+    if ((int)$td['aulas_no_dia'] > 0) {
+        $dia = $td['dia_semana'];
+        $diasRelatorio[] = $dia;
+        $matrix[$dia] = [];
+        $maxPorDia[$dia] = (int)$td['aulas_no_dia'];
+    }
+}
+
+// Preenche a matriz
+foreach ($horariosRaw as $row) {
+    $dia = $row['dia_semana'];
+    if (!isset($matrix[$dia])) continue;
+
+    $aula  = (int)$row['numero_aula'];
+    $texto = $row['nome_disciplina'];
+    if (!empty($row['professor'])) $texto .= "\n".$row['professor'];
+    $matrix[$dia][$aula] = $texto;
+
+    if ($aula > $maxPorDia[$dia]) $maxPorDia[$dia] = $aula;
+}
+
+$maxAulasGlobal = !empty($maxPorDia) ? max($maxPorDia) : 0;
+if ($maxAulasGlobal == 0) {
+    $pdf->SetFont('Arial','B',12);
+    $pdf->Cell(0, 12, 'Nenhuma aula cadastrada para esta turma.', 0, 1, 'C');
+    $pdf->Output('I','HorarioDaTurma.pdf');
+    exit;
+}
+
+// 6) Intervalos
+$intervals = [];
+if (!empty($turma['intervalos_positions'])) {
+    $intervals = array_map('intval', array_filter(array_map('trim', explode(',', $turma['intervalos_positions']))));
+    sort($intervals);
+}
+
+// 7) Tabela
+$margin = 10;
+$pageWidth   = $pdf->GetPageWidth();
+$usableWidth = $pageWidth - (2 * $margin);
+$colWidthAula = 30;
+$daysCount    = count($diasRelatorio);
+$colWidthDay  = ($usableWidth - $colWidthAula) / $daysCount;
+
+$pdf->SetFont('Arial','B',12);
+$pdf->SetFillColor(200,200,200);
+$pdf->Cell($colWidthAula, 12, iconv('UTF-8','ISO-8859-1','Aula / Dia'), 1, 0, 'C', true);
+foreach ($diasRelatorio as $d) {
+    $mappedDay = isset($dayMapping[$d]) ? $dayMapping[$d] : $d;
+    $pdf->Cell($colWidthDay, 12, iconv('UTF-8','ISO-8859-1',$mappedDay), 1, 0, 'C', true);
+}
+$pdf->Ln();
+
+for ($a = 1; $a <= $maxAulasGlobal; $a++) {
+    $rowTexts = [];
+    foreach ($diasRelatorio as $dia) {
+        $rowTexts[] = ($a <= $maxPorDia[$dia]) ? ($matrix[$dia][$a] ?? '') : '';
+    }
+
+    $maxLines = 1;
+    foreach ($rowTexts as $t) {
+        if ($t !== '') {
+            $num = count(explode("\n", $t));
+            if ($num > $maxLines) $maxLines = $num;
+        }
+    }
+
+    $lineHeight = 7;
+    $rowHeight  = max(14, $maxLines * $lineHeight);
+
+    $pdf->SetFont('Arial','B',12);
+    $pdf->Cell($colWidthAula, $rowHeight, iconv('UTF-8','ISO-8859-1//TRANSLIT',$a.'ª Aula'), 1, 0, 'C', true);
+
+    $pdf->SetFont('Arial','',11);
+    foreach ($rowTexts as $texto) {
+        $x = $pdf->GetX();
+        $y = $pdf->GetY();
+        $pdf->Cell($colWidthDay, $rowHeight, '', 1, 0, 'C');
+
+        if ($texto !== '') {
+            $linhas = explode("\n", $texto);
+            $yTexto = $y + ($rowHeight / 2) - ((count($linhas) * 4) / 2);
+            $pdf->SetXY($x, $yTexto);
+            foreach ($linhas as $linha) {
+                $pdf->Cell($colWidthDay, 4, iconv('UTF-8','ISO-8859-1//TRANSLIT',$linha), 0, 2, 'C');
+            }
+            $pdf->SetXY($x + $colWidthDay, $y);
+        }
+    }
+    $pdf->Ln($rowHeight);
+
+    if (in_array($a, $intervals)) {
+        $intervalHeight = 10;
+        $pdf->SetFont('Arial','B',12);
+        $pdf->Cell($colWidthAula, $intervalHeight, 'Intervalo', 1, 0, 'C', false);
+        foreach ($diasRelatorio as $dia) {
+            $pdf->Cell($colWidthDay, $intervalHeight, 'Intervalo', 1, 0, 'C', false);
+        }
+        $pdf->Ln($intervalHeight);
+    }
+}
+
+$pdf->Output('I','HorarioDaTurma.pdf');
+exit;
+?>

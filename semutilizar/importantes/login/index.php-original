@@ -1,0 +1,55 @@
+<?php
+require_once __DIR__ . '/../../configs/init.php';
+?>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head><meta charset="utf-8">
+	
+	<title>Login - Class Hours</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+	<link rel="stylesheet" href="<?php echo CSS_PATH; ?>/login.css" />
+    <!-- SweetAlert2 offline -->
+    <link rel="stylesheet" href="<?php echo SW_PATH ?>/sweetalert2.css">
+	<link rel="icon" type="image/x-icon" href="<?php echo IMG_PATH; ?>/fav/favicon.png" />
+</head>
+<body>
+	<div class="page">
+		<div class="login-container">
+			<form id="loginForm" method="POST" action="/horarios/app/controllers/login/loginCheck.php" autocomplete="off" novalidate>
+				<div class="titulo">
+					<h1>Faça o seu login</h1>
+					<div class="barra-horizontal"></div>
+				</div>
+
+				<div class="campo-input">
+					<label for="username">Nome de Usuário*</label>
+					<input type="text" id="username" name="username" required />
+				</div>
+
+				<div class="campo-input">
+					<label for="password">Senha*</label>
+					<input type="password" id="password" name="password" required />
+				</div>
+
+				<div class="lembrar-me">
+					<input type="checkbox" id="rememberMe" name="rememberMe" />
+					<p>Lembrar-me</p>
+				</div>
+
+				<button type="submit" id="btnLogin">Entrar</button>
+
+				<p class="esqueceu-senha">
+					Esqueceu sua senha?
+					<span id="linkEsqueceuSenha">Clique aqui!</span>
+				</p>
+			</form>
+		</div>
+	</div>
+
+	<!-- <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script> -->
+    <script src="<?php echo SW_PATH; ?>/sweetalert2.all.min.js"></script>
+	<script src="<?php echo JS_PATH; ?>/login.js"></script>
+</body>
+
+</html>
