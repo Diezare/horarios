@@ -105,6 +105,25 @@ function temConsecutiva(&$agenda, $did, $dia, $aula, $max) {
     return false;
 }
 
+function _didNoAgendaComOverride(&$agenda, $dia, $aula, &$override) {
+    $k = (string)$dia . '|' . (int)$aula;
+    if (array_key_exists($k, $override)) return $override[$k]; // pode ser null
+    $s = $agenda[(string)$dia][(int)$aula] ?? null;
+    return $s ? (int)$s['d'] : null;
+}
+
+function violaConsecutivaAoColocarComOverride(&$agenda, $dia, $aula, $didNew, $max, &$override) {
+    $dia = (string)$dia; $aula = (int)$aula; $didNew = (int)$didNew; $max = (int)$max;
+
+    $left  = ($aula > 1)    ? _didNoAgendaComOverride($agenda, $dia, $aula - 1, $override) : null;
+    $right = ($aula < $max) ? _didNoAgendaComOverride($agenda, $dia, $aula + 1, $override) : null;
+
+    if ($left !== null  && (int)$left  === $didNew) return true;
+    if ($right !== null && (int)$right === $didNew) return true;
+    return false;
+}
+
+
 function ensureQuotaBucket(&$turma, $did, $pid) {
     if (!isset($turma['quota'][$did])) $turma['quota'][$did] = [];
     if (!isset($turma['quota'][$did][$pid])) $turma['quota'][$did][$pid] = 0;
@@ -273,7 +292,7 @@ function contarSlotsViaveisParaDisciplina(&$turma, $did, &$turnoDias, &$profs, &
    Cadeia global: libera professor em (turno,dia,aula)
 ========================= */
 
-function liberarProfessorNoSlotGlobal(
+/*function liberarProfessorNoSlotGlobal(
     $pid, $turno, $dia, $aula,
     &$turmas, &$turnoDias, &$profs, &$ocup, &$fixos, &$disciplinasSerie,
     $depth = 4,
@@ -327,13 +346,145 @@ function liberarProfessorNoSlotGlobal(
     }
 
     return false;
+}*/
+
+function liberarProfessorNoSlotGlobal(
+    $pid, $turno, $dia, $aula,
+    &$turmas, &$turnoDias, &$profs, &$ocup, &$fixos, &$disciplinasSerie,
+    $depth = 4,
+    &$visited = null
+) {
+    $pid = (int)$pid; $turno = (int)$turno; $dia = (string)$dia; $aula = (int)$aula;
+    if ($depth <= 0) return false;
+
+    if ($visited === null) $visited = [];
+    $key = $pid . '|' . $turno . '|' . $dia . '|' . $aula;
+    if (isset($visited[$key])) return false;
+    $visited[$key] = true;
+
+    if (!isset($ocup[$turno][$dia][$aula][$pid])) return true;
+
+    $turmaOcupId = (int)$ocup[$turno][$dia][$aula][$pid];
+    if (!isset($turmas[$turmaOcupId])) return false;
+
+    $turmaOcup = &$turmas[$turmaOcupId];
+    $serie = (int)$turmaOcup['serie_id'];
+
+    if (isSlotFixo((int)$turmaOcup['id'], $dia, $aula, $fixos)) return false;
+
+    $slotA = $turmaOcup['agenda'][$dia][$aula] ?? null;
+    if ($slotA === null) { unset($ocup[$turno][$dia][$aula][$pid]); return true; }
+
+    $didA = (int)$slotA['d'];
+    $pidA = (int)$slotA['p'];
+    if ($pidA !== $pid) return false;
+
+    if (!empty($disciplinasSerie[$serie][$didA]['is_ef'])) return false;
+
+    /* (1) mover para vazio dentro da turma bloqueadora */
+    $vazios = listarVaziosDaTurma($turmaOcup, $turnoDias, $fixos);
+    shuffle($vazios);
+
+    foreach ($vazios as $pair) {
+        $dia2 = (string)$pair[0];
+        $a2   = (int)$pair[1];
+
+        if (temRestricao($pid, $turno, $dia2, $a2, $profs)) continue;
+
+        // NÃO criar consecutiva
+        $max2 = (int)$turnoDias[$turno][$dia2];
+        $ov = []; // sem override (destino vazio)
+        if (violaConsecutivaAoColocarComOverride($turmaOcup['agenda'], $dia2, $a2, $didA, $max2, $ov)) continue;
+
+        if (isset($ocup[$turno][$dia2][$a2][$pid])) {
+            $ok = liberarProfessorNoSlotGlobal(
+                $pid, $turno, $dia2, $a2,
+                $turmas, $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                $depth - 1, $visited
+            );
+            if (!$ok) continue;
+            if (isset($ocup[$turno][$dia2][$a2][$pid])) continue;
+        }
+
+        setSlot($turmaOcup, $dia2, $a2, $slotA, $profs, $ocup);
+        setSlot($turmaOcup, $dia,  $aula, null,  $profs, $ocup);
+        return true;
+    }
+
+    /* (2) sem vazios? => swap 1x1 dentro da turma bloqueadora, sem criar consecutiva */
+    $slotsAll = listarSlotsDaTurmaNaoFixos($turmaOcup, $turnoDias, $fixos);
+    shuffle($slotsAll);
+
+    foreach ($slotsAll as $pair) {
+        $diaB = (string)$pair[0];
+        $aB   = (int)$pair[1];
+
+        if ($diaB === $dia && $aB === $aula) continue;
+        if (isSlotFixo((int)$turmaOcup['id'], $diaB, $aB, $fixos)) continue;
+
+        $slotB = $turmaOcup['agenda'][$diaB][$aB] ?? null;
+        if ($slotB === null) continue;
+
+        $didB = (int)$slotB['d'];
+        $pidB = (int)$slotB['p'];
+        if ($pidB <= 0) continue;
+
+        if (!empty($disciplinasSerie[$serie][$didB]['is_ef'])) continue;
+
+        // pid (A) precisa poder ir para B
+        if (temRestricao($pid, $turno, $diaB, $aB, $profs)) continue;
+        if (isset($ocup[$turno][$diaB][$aB][$pid])) {
+            $ok = liberarProfessorNoSlotGlobal(
+                $pid, $turno, $diaB, $aB,
+                $turmas, $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                $depth - 1, $visited
+            );
+            if (!$ok) continue;
+            if (isset($ocup[$turno][$diaB][$aB][$pid])) continue;
+        }
+
+        // pidB (B) precisa poder ir para A
+        if (temRestricao($pidB, $turno, $dia, $aula, $profs)) continue;
+        if (isset($ocup[$turno][$dia][$aula][$pidB])) {
+            $ok = liberarProfessorNoSlotGlobal(
+                $pidB, $turno, $dia, $aula,
+                $turmas, $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                $depth - 1, $visited
+            );
+            if (!$ok) continue;
+            if (isset($ocup[$turno][$dia][$aula][$pidB])) continue;
+        }
+
+        // checagem final de disponibilidade (ignora o próprio slot)
+        if (!profDisponivelIgnorandoProprioSlot($pid,  $turno, $diaB, $aB, $profs, $ocup, $turmaOcupId, $turno, $dia,  $aula)) continue;
+        if (!profDisponivelIgnorandoProprioSlot($pidB, $turno, $dia,  $aula, $profs, $ocup, $turmaOcupId, $turno, $diaB, $aB)) continue;
+
+        // NÃO criar consecutivas após o swap
+        $ov = [
+            $dia . '|' . $aula => $didB,
+            $diaB . '|' . $aB  => $didA
+        ];
+
+        $maxA = (int)$turnoDias[$turno][$dia];
+        $maxB = (int)$turnoDias[$turno][$diaB];
+
+        if (violaConsecutivaAoColocarComOverride($turmaOcup['agenda'], $dia,  $aula, $didB, $maxA, $ov)) continue;
+        if (violaConsecutivaAoColocarComOverride($turmaOcup['agenda'], $diaB, $aB,  $didA, $maxB, $ov)) continue;
+
+        setSlot($turmaOcup, $diaB, $aB, $slotA, $profs, $ocup);
+        setSlot($turmaOcup, $dia,  $aula, $slotB, $profs, $ocup);
+        return true;
+    }
+
+    return false;
 }
+
 
 /* =========================
    Cadeia genérica: abrir slot na turma (empurra aula atual para vazio, ou recursão)
 ========================= */
 
-function abrirSlotPorCadeiaGenerica(
+/*function abrirSlotPorCadeiaGenerica(
     &$turma, $diaAlvo, $aulaAlvo,
     &$turnoDias, &$profs, &$ocup, &$fixos, &$disciplinasSerie,
     $depth,
@@ -432,13 +583,127 @@ function abrirSlotPorCadeiaGenerica(
     }
 
     return false;
+}*/
+
+function abrirSlotPorCadeiaGenerica(
+    &$turma, $diaAlvo, $aulaAlvo,
+    &$turnoDias, &$profs, &$ocup, &$fixos, &$disciplinasSerie,
+    $depth,
+    &$turmas,
+    $globalDepth,
+    &$visitedPos = null
+) {
+    $turno = (int)$turma['turno_id'];
+    $serie = (int)$turma['serie_id'];
+    $turmaId = (int)$turma['id'];
+
+    $diaAlvo = (string)$diaAlvo; $aulaAlvo = (int)$aulaAlvo;
+
+    if ($depth <= 0) return false;
+    if (isSlotFixo($turmaId, $diaAlvo, $aulaAlvo, $fixos)) return false;
+    if (!isset($turma['agenda'][$diaAlvo])) return false;
+    if (!array_key_exists($aulaAlvo, $turma['agenda'][$diaAlvo])) return false;
+
+    if ($visitedPos === null) $visitedPos = [];
+    $kpos = $diaAlvo . '|' . $aulaAlvo;
+    if (isset($visitedPos[$kpos])) return false;
+    $visitedPos[$kpos] = true;
+
+    $slotA = $turma['agenda'][$diaAlvo][$aulaAlvo];
+    if ($slotA === null) return true;
+
+    $didA = (int)$slotA['d'];
+    $pidA = (int)$slotA['p'];
+    if (!empty($disciplinasSerie[$serie][$didA]['is_ef'])) return false;
+
+    // tenta mover slotA para um vazio (sem criar consecutiva)
+    $vazios = listarVaziosDaTurma($turma, $turnoDias, $fixos);
+    shuffle($vazios);
+
+    foreach ($vazios as $pair) {
+        $diaV = (string)$pair[0];
+        $aV   = (int)$pair[1];
+
+        if ($diaV === $diaAlvo && $aV === $aulaAlvo) continue;
+
+        if (!profDisponivelIgnorandoProprioSlot($pidA, $turno, $diaV, $aV, $profs, $ocup, $turmaId, $turno, $diaAlvo, $aulaAlvo)) continue;
+
+        // NÃO criar consecutiva do didA no destino
+        $maxV = (int)$turnoDias[$turno][$diaV];
+        $ov = [];
+        if (violaConsecutivaAoColocarComOverride($turma['agenda'], $diaV, $aV, $didA, $maxV, $ov)) continue;
+
+        if (isset($ocup[$turno][$diaV][$aV][$pidA])) {
+            $visited = [];
+            $ok = liberarProfessorNoSlotGlobal(
+                $pidA, $turno, $diaV, $aV,
+                $turmas, $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                $globalDepth, $visited
+            );
+            if (!$ok) continue;
+            if (isset($ocup[$turno][$diaV][$aV][$pidA])) continue;
+        }
+
+        setSlot($turma, $diaV, $aV, $slotA, $profs, $ocup);
+        setSlot($turma, $diaAlvo, $aulaAlvo, null, $profs, $ocup);
+        return true;
+    }
+
+    // recursão: abre outro slot e empurra
+    $dias = array_keys($turnoDias[$turno]);
+    shuffle($dias);
+
+    foreach ($dias as $diaB) {
+        $diaB = (string)$diaB;
+        $maxB = (int)$turnoDias[$turno][$diaB];
+        $aulasB = range(1, $maxB);
+        shuffle($aulasB);
+
+        foreach ($aulasB as $aB) {
+            $aB = (int)$aB;
+
+            if ($diaB === $diaAlvo && $aB === $aulaAlvo) continue;
+            if (isSlotFixo($turmaId, $diaB, $aB, $fixos)) continue;
+
+            $slotB = $turma['agenda'][$diaB][$aB] ?? null;
+            if ($slotB === null) continue;
+
+            $didB = (int)$slotB['d'];
+            if (!empty($disciplinasSerie[$serie][$didB]['is_ef'])) continue;
+
+            if (!profDisponivelIgnorandoProprioSlot($pidA, $turno, $diaB, $aB, $profs, $ocup, $turmaId, $turno, $diaAlvo, $aulaAlvo)) continue;
+
+            $ok = abrirSlotPorCadeiaGenerica(
+                $turma, $diaB, $aB,
+                $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                $depth - 1,
+                $turmas,
+                $globalDepth,
+                $visitedPos
+            );
+
+            if (!$ok) continue;
+            if (($turma['agenda'][$diaB][$aB] ?? null) !== null) continue; // tem que ter virado vazio
+
+            // NÃO criar consecutiva do didA no slotB agora vazio
+            $ov = [];
+            if (violaConsecutivaAoColocarComOverride($turma['agenda'], $diaB, $aB, $didA, $maxB, $ov)) continue;
+
+            setSlot($turma, $diaB, $aB, $slotA, $profs, $ocup);
+            setSlot($turma, $diaAlvo, $aulaAlvo, null, $profs, $ocup);
+            return true;
+        }
+    }
+
+    return false;
 }
+
 
 /* =========================
    Seleção de professor respeitando cotas
 ========================= */
 
-function ordenarProfsPorDisponibilidadeEQuota($turma, $did, $turno, &$turnoDias, &$profs, &$ocup) {
+/*function ordenarProfsPorDisponibilidadeEQuota($turma, $did, $turno, &$turnoDias, &$profs, &$ocup) {
     $profsCand = $turma['profs_disc'][(int)$did] ?? [];
     if (empty($profsCand)) return [];
 
@@ -458,13 +723,37 @@ function ordenarProfsPorDisponibilidadeEQuota($turma, $did, $turno, &$turnoDias,
     });
 
     return $profsCand;
+}*/
+
+function ordenarProfsPorDisponibilidadeEQuota($turma, $did, $turno, &$turnoDias, &$profs, &$ocup) {
+    $profsCand = $turma['profs_disc'][(int)$did] ?? [];
+    if (empty($profsCand)) return [];
+
+    // Se existe quota para essa disciplina, vira HARD:
+    // só retorna professores com quota > 0. Se ninguém tiver, retorna vazio.
+    if (isset($turma['quota'][(int)$did])) {
+        $profsCand = array_values(array_filter($profsCand, function($pid) use ($turma, $did) {
+            $qr = quotaRestante($turma, (int)$did, (int)$pid);
+            return $qr !== null && (int)$qr > 0;
+        }));
+        if (empty($profsCand)) return [];
+    }
+
+    usort($profsCand, function($a, $b) use ($turno, &$turnoDias, &$profs, &$ocup) {
+        return horariosLivresProf((int)$a, (int)$turno, $turnoDias, $profs, $ocup)
+            <=>
+               horariosLivresProf((int)$b, (int)$turno, $turnoDias, $profs, $ocup);
+    });
+
+    return $profsCand;
 }
+
 
 /* =========================
    Finalizador: abre slot ensinável
 ========================= */
 
-function alocarUmaUnidadeComFinalizador(
+/*function alocarUmaUnidadeComFinalizador(
     &$turma, $did,
     &$turmas, &$turnoDias, &$profs, &$ocup, &$fixos, &$disciplinasSerie,
     $limiteDia,
@@ -552,7 +841,112 @@ function alocarUmaUnidadeComFinalizador(
     }
 
     return false;
+}*/
+
+function alocarUmaUnidadeComFinalizador(
+    &$turma, $did,
+    &$turmas, &$turnoDias, &$profs, &$ocup, &$fixos, &$disciplinasSerie,
+    $limiteDia,
+    $chainDepth,
+    $globalDepth,
+    $permitirConsecutiva = false
+) {
+    $turno = (int)$turma['turno_id'];
+    $serie = (int)$turma['serie_id'];
+
+    $profsCand = ordenarProfsPorDisponibilidadeEQuota($turma, (int)$did, $turno, $turnoDias, $profs, $ocup);
+    if (empty($profsCand)) return false;
+
+    // (A) tentar nos VAZIOS, mas agora tentando liberar professor se estiver ocupado em outra turma
+    $vazios = listarVaziosDaTurma($turma, $turnoDias, $fixos);
+    shuffle($vazios);
+
+    foreach ($vazios as $pair) {
+        $dia  = (string)$pair[0];
+        $aula = (int)$pair[1];
+
+        $max = (int)$turnoDias[$turno][$dia];
+        if (aulasNoDia($turma['agenda'], (int)$did, $dia) >= (int)$limiteDia) continue;
+        if (!$permitirConsecutiva && temConsecutiva($turma['agenda'], (int)$did, $dia, $aula, $max)) continue;
+
+        foreach ($profsCand as $pid) {
+            $pid = (int)$pid;
+
+            $qr = quotaRestante($turma, (int)$did, (int)$pid);
+            if ($qr !== null && $qr <= 0) continue;
+
+            // se está restrito, nem tenta
+            if (temRestricao($pid, $turno, $dia, $aula, $profs)) continue;
+
+            // se está ocupado, tenta liberar globalmente (swap/move dentro da turma onde ele está)
+            if (isset($ocup[$turno][$dia][$aula][$pid])) {
+                $visited = [];
+                $ok = liberarProfessorNoSlotGlobal(
+                    $pid, $turno, $dia, $aula,
+                    $turmas, $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                    $globalDepth, $visited
+                );
+                if (!$ok) continue;
+            }
+
+            if (!profDisponivel($pid, $turno, $dia, $aula, $profs, $ocup)) continue;
+
+            alocar($turma, (int)$did, $pid, $dia, $aula, $profs, $ocup);
+            return true;
+        }
+    }
+
+    // (B) slot ensinável (ocupado+vazio) - mantém sua lógica atual
+    $slots = listarSlotsDaTurmaNaoFixos($turma, $turnoDias, $fixos);
+    shuffle($slots);
+
+    foreach ($profsCand as $pid) {
+        $pid = (int)$pid;
+
+        $qr = quotaRestante($turma, (int)$did, (int)$pid);
+        if ($qr !== null && $qr <= 0) continue;
+
+        foreach ($slots as $pair) {
+            $dia  = (string)$pair[0];
+            $aula = (int)$pair[1];
+
+            if (temRestricao($pid, $turno, $dia, $aula, $profs)) continue;
+
+            $max = (int)$turnoDias[$turno][$dia];
+            if (aulasNoDia($turma['agenda'], (int)$did, $dia) >= (int)$limiteDia) continue;
+            if (!$permitirConsecutiva && temConsecutiva($turma['agenda'], (int)$did, $dia, $aula, $max)) continue;
+
+            if (!profDisponivel($pid, $turno, $dia, $aula, $profs, $ocup)) {
+                $visited = [];
+                $ok = liberarProfessorNoSlotGlobal(
+                    $pid, $turno, $dia, $aula,
+                    $turmas, $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                    $globalDepth, $visited
+                );
+                if (!$ok) continue;
+                if (!profDisponivel($pid, $turno, $dia, $aula, $profs, $ocup)) continue;
+            }
+
+            $visitedPos = [];
+            $okOpen = abrirSlotPorCadeiaGenerica(
+                $turma, $dia, $aula,
+                $turnoDias, $profs, $ocup, $fixos, $disciplinasSerie,
+                $chainDepth,
+                $turmas,
+                $globalDepth,
+                $visitedPos
+            );
+            if (!$okOpen) continue;
+            if (($turma['agenda'][$dia][$aula] ?? null) !== null) continue;
+
+            alocar($turma, (int)$did, $pid, $dia, $aula, $profs, $ocup);
+            return true;
+        }
+    }
+
+    return false;
 }
+
 
 /* =========================
    Main

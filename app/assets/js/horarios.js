@@ -423,14 +423,31 @@ if (selectTurno) {
   // =============================================
   // BOTÃO AUTOMÁTICO + MODAL
   // =============================================
-  if (btnAutomatico) {
+  /*if (btnAutomatico) {
     btnAutomatico.disabled = true;
     btnAutomatico.addEventListener('click', () => {
       if (!idAnoSelecionado || !idNivelEnsinoSelecionado || !idTurnoSelecionado) return;
       //openModalAutomatico();
       window.iniciarGeracaoComModal(idAnoSelecionado, idNivelEnsinoSelecionado);
     });
-  }
+  }*/
+
+if (btnAutomatico) {
+  btnAutomatico.disabled = true;
+  btnAutomatico.addEventListener('click', () => {
+    if (!idAnoSelecionado || !idNivelEnsinoSelecionado || !idTurnoSelecionado) return;
+
+    // Se você usa a função externa iniciarGeracaoComModal, passe o turno também
+    if (typeof window.iniciarGeracaoComModal === 'function') {
+      window.iniciarGeracaoComModal(idAnoSelecionado, idNivelEnsinoSelecionado, idTurnoSelecionado);
+      return;
+    }
+
+    // fallback: abre modal local se existir
+    // openModalAutomatico();
+  });
+}
+
 
   function openModalAutomatico() {
     if (!modalAutomatico) {
@@ -706,7 +723,7 @@ if (selectTurno) {
     }
   }
 
-  async function loadHorariosTurma(idTurma) {
+  /*async function loadHorariosTurma(idTurma) {
     try {
       const resp = await fetchJson(`/horarios/app/controllers/horarios/listHorarios.php?id_turma=${encodeURIComponent(idTurma)}`);
       if (resp.status === 'success') {
@@ -724,7 +741,35 @@ if (selectTurno) {
       console.error(err);
       dadosTurma = null;
     }
+  }*/
+
+async function loadHorariosTurma(idTurma) {
+  try {
+    const turno = String(idTurnoSelecionado || '');
+    const url =
+      `/horarios/app/controllers/horarios/listHorarios.php` +
+      `?id_turma=${encodeURIComponent(idTurma)}` +
+      (turno ? `&id_turno=${encodeURIComponent(turno)}` : '');
+
+    const resp = await fetchJson(url);
+
+    if (resp.status === 'success') {
+      dadosTurma = resp.data;
+
+      const intervalStr = dadosTurma?.turma?.intervalos_positions || '';
+      intervalPositions = intervalStr
+        .split(',')
+        .map(n => parseInt(String(n).trim(), 10))
+        .filter(x => !isNaN(x) && x > 0);
+    } else {
+      dadosTurma = null;
+    }
+  } catch (err) {
+    console.error('Erro loadHorariosTurma:', err);
+    dadosTurma = null;
   }
+}
+
 
   async function loadTurmaTurnoLookup(idAno, idNivel) {
     turmaTurnoLookup = {};
@@ -1173,7 +1218,7 @@ if (selectTurno) {
   // =============================================
   // CRUD HORÁRIOS
   // =============================================
-  async function registrarHistorico(horarioObj) {
+  /*async function registrarHistorico(horarioObj) {
     if (!horarioObj?.id_horario) return;
 
     const body = new URLSearchParams({
@@ -1199,7 +1244,38 @@ if (selectTurno) {
     } catch (err) {
       console.error(err);
     }
+  }*/
+
+async function registrarHistorico(horarioObj) {
+  if (!horarioObj?.id_horario) return;
+
+  const body = new URLSearchParams({
+    id_horario_original: String(horarioObj.id_horario),
+    id_turma: String(horarioObj.id_turma || idTurmaSelecionada || ''),
+    id_turno: String(horarioObj.id_turno || idTurnoSelecionado || ''),
+    id_ano_letivo: String(horarioObj.id_ano_letivo || idAnoSelecionado || ''),
+    dia_semana: String(horarioObj.dia_semana || ''),
+    numero_aula: String(horarioObj.numero_aula || ''),
+    id_disciplina: String(horarioObj.id_disciplina || ''),
+    id_professor: String(horarioObj.id_professor || ''),
+    data_criacao: String(horarioObj.data_criacao || '')
+  });
+
+  try {
+    const resp = await fetchJson('/horarios/app/controllers/horarios/archiveHorario.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+
+    if (resp.status !== 'success') {
+      console.warn('Falha ao registrar histórico:', resp.message);
+    }
+  } catch (err) {
+    console.error('Erro registrarHistorico:', err);
   }
+}
+
 
   async function salvarOuAtualizar(diaSemana, numeroAula, discId, profId, td) {
     if (!idTurmaSelecionada) return;
@@ -1251,7 +1327,7 @@ if (selectTurno) {
     aplicarCorCelula(td, '', '');
   }
 
-  async function inserirHorario(diaSemana, numeroAula, discId, profId) {
+  /*async function inserirHorario(diaSemana, numeroAula, discId, profId) {
     const body = new URLSearchParams({
       id_turma: idTurmaSelecionada,
       dia_semana: diaSemana,
@@ -1292,7 +1368,61 @@ if (selectTurno) {
       console.error(err);
       alert('Erro ao inserir horário');
     }
+  }*/
+
+async function inserirHorario(diaSemana, numeroAula, discId, profId) {
+  if (!idTurmaSelecionada) return;
+  if (!idTurnoSelecionado) {
+    alert('Selecione o turno antes de inserir horário.');
+    return;
   }
+
+  const body = new URLSearchParams({
+    id_turma: String(idTurmaSelecionada),
+    id_turno: String(idTurnoSelecionado), // ✅ obrigatório no PHP novo
+    dia_semana: String(diaSemana),
+    numero_aula: String(numeroAula),
+    id_disciplina: String(discId),
+    id_professor: String(profId)
+  });
+
+  try {
+    const resp = await fetchJson('/horarios/app/controllers/horarios/insertHorarios.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+
+    if (resp.status === 'success') {
+      // garante array
+      if (!Array.isArray(dadosTurma.horarios)) dadosTurma.horarios = [];
+      dadosTurma.horarios.push(resp.data);
+
+      // contadores
+      const did = String(discId);
+      usedDisciplineCount[did] = (usedDisciplineCount[did] || 0) + 1;
+
+      // adiciona no allHorariosDoAno para conflito imediato
+      const turmaInfo = turmasMap[String(idTurmaSelecionada)] || {};
+      allHorariosDoAno.push({
+        ...resp.data,
+        id_turma: String(idTurmaSelecionada),
+        id_turno: String(resp.data?.id_turno || turmaInfo.id_turno || idTurnoSelecionado),
+        nome_serie: turmaInfo.nome_serie || '',
+        nome_turma: turmaInfo.nome_turma || '',
+        id_serie: turmaInfo.id_serie || null,
+        id_ano_letivo: String(resp.data?.id_ano_letivo || turmaInfo.id_ano_letivo || idAnoSelecionado)
+      });
+
+    } else {
+      alert(resp.message || 'Erro ao inserir horário');
+    }
+  } catch (err) {
+    console.error('Erro inserirHorario:', err);
+    alert('Erro ao inserir horário');
+  }
+}
+
 
   async function atualizarHorario(idHorario, discId, profId) {
     const body = new URLSearchParams({
@@ -1353,7 +1483,7 @@ if (selectTurno) {
     }
   }
 
-  async function deletaNoBanco(diaSemana, numeroAula, idHorario, discId) {
+  /*async function deletaNoBanco(diaSemana, numeroAula, idHorario, discId) {
     const body = new URLSearchParams({
       id_turma: idTurmaSelecionada,
       dia_semana: diaSemana,
@@ -1403,7 +1533,77 @@ if (selectTurno) {
       console.error(err);
       alert('Erro ao deletar horário');
     }
+  }*/
+
+async function deletaNoBanco(diaSemana, numeroAula, idHorario, discId) {
+  if (!idTurnoSelecionado) {
+    alert('Selecione o turno antes de remover horário.');
+    return;
   }
+
+  const body = new URLSearchParams({
+    id_turma: String(idTurmaSelecionada),
+    id_turno: String(idTurnoSelecionado), // ✅ obrigatório no PHP novo
+    dia_semana: String(diaSemana),
+    numero_aula: String(numeroAula)
+  });
+
+  try {
+    const resp = await fetchJson('/horarios/app/controllers/horarios/deleteHorarios.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+
+    if (resp.status === 'success') {
+      if (discId) {
+        const did = String(discId);
+        usedDisciplineCount[did] = Math.max(0, (usedDisciplineCount[did] || 0) - 1);
+      }
+
+      dadosTurma.horarios = (dadosTurma.horarios || []).filter(x =>
+        !(x.dia_semana === diaSemana && parseInt(x.numero_aula, 10) === parseInt(numeroAula, 10))
+      );
+
+      if (idHorario) {
+        allHorariosDoAno = allHorariosDoAno.filter(x => String(x.id_horario) !== String(idHorario));
+      } else {
+        // fallback por slot
+        allHorariosDoAno = allHorariosDoAno.filter(x =>
+          !(String(x.id_turma) === String(idTurmaSelecionada) &&
+            String(x.id_turno || '') === String(idTurnoSelecionado) &&
+            x.dia_semana === diaSemana &&
+            parseInt(x.numero_aula, 10) === parseInt(numeroAula, 10))
+        );
+      }
+
+    } else {
+      if (resp.message === 'Horário não encontrado.') {
+        // sincroniza local mesmo assim
+        dadosTurma.horarios = (dadosTurma.horarios || []).filter(x =>
+          !(x.dia_semana === diaSemana && parseInt(x.numero_aula, 10) === parseInt(numeroAula, 10))
+        );
+
+        allHorariosDoAno = allHorariosDoAno.filter(x =>
+          !(String(x.id_turma) === String(idTurmaSelecionada) &&
+            String(x.id_turno || '') === String(idTurnoSelecionado) &&
+            x.dia_semana === diaSemana &&
+            parseInt(x.numero_aula, 10) === parseInt(numeroAula, 10))
+        );
+      } else {
+        alert(resp.message);
+      }
+    }
+
+    atualizarQuadroDisciplinas();
+    refreshAllDisciplineOptionStates();
+
+  } catch (err) {
+    console.error('Erro deletaNoBanco:', err);
+    alert('Erro ao deletar horário');
+  }
+}
+
 
   // =============================================
   // QUADRO DISCIPLINAS

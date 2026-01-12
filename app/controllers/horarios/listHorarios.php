@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../../configs/init.php';
 header('Content-Type: application/json; charset=utf-8');
 
 $id_turma = isset($_GET['id_turma']) ? (int)$_GET['id_turma'] : 0;
-$id_turno = isset($_GET['id_turno']) ? (int)$_GET['id_turno'] : 0; // opcional (mas recomendado)
+$id_turno = isset($_GET['id_turno']) ? (int)$_GET['id_turno'] : 0; // opcional (recomendado)
 
 if ($id_turma <= 0) {
     echo json_encode(['status' => 'error', 'message' => 'Parâmetro id_turma inválido.']);
@@ -43,7 +43,9 @@ try {
     }
     if ($id_turno <= 0) $id_turno = (int)$turma['id_turno'];
 
-    // 2) Dias do turno (turno_dias)
+    $idAnoLetivo = (int)$turma['id_ano_letivo'];
+
+    // 2) Dias do turno
     $sqlDias = "
         SELECT *
         FROM turno_dias
@@ -81,27 +83,30 @@ try {
     $stmt = $pdo->query($sqlProfs);
     $professores = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 5) Horários cadastrados (FILTRA TURNO)
+    // 5) Horários cadastrados (FILTRA ANO + TURNO)
     $sqlHorarios = "
         SELECT 
             h.id_horario,
+            h.id_ano_letivo,
             h.id_turma,
             h.id_turno,
             h.dia_semana,
             h.numero_aula,
             h.id_disciplina,
             h.id_professor,
-            d.nome_disciplina,
-            COALESCE(p.nome_exibicao, p.nome_completo) AS nome_professor
+            COALESCE(d.nome_disciplina,'') AS nome_disciplina,
+            COALESCE(p.nome_exibicao, p.nome_completo,'') AS nome_professor
         FROM horario h
-        JOIN disciplina d ON h.id_disciplina = d.id_disciplina
-        JOIN professor p  ON h.id_professor  = p.id_professor
+        LEFT JOIN disciplina d ON h.id_disciplina = d.id_disciplina
+        LEFT JOIN professor  p ON h.id_professor  = p.id_professor
         WHERE h.id_turma = ?
-          AND h.id_turno = ?
+        AND h.id_turno = ?
+        AND h.id_ano_letivo = ?
     ";
     $stmt = $pdo->prepare($sqlHorarios);
-    $stmt->execute([$id_turma, $id_turno]);
+    $stmt->execute([$id_turma, $id_turno, $idAnoLetivo]);
     $horarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 
     echo json_encode([
         'status' => 'success',
@@ -115,7 +120,7 @@ try {
     ]);
     exit;
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
     exit;
 }

@@ -30,9 +30,9 @@ try {
             h.id_horario,
             h.id_turma,
             h.id_turno,
+            h.id_ano_letivo,
             h.dia_semana,
-            h.numero_aula,
-            t.id_ano_letivo
+            h.numero_aula
         FROM horario h
         JOIN turma t ON t.id_turma = h.id_turma
         JOIN serie s ON t.id_serie = s.id_serie
@@ -50,34 +50,72 @@ try {
         exit;
     }
 
-    // 2) Conflito do professor (AGORA COM TURNO + ANO LETIVO)
-    $stmt = $pdo->prepare("
+    // 2) Conflito do professor (AGORA COM ANO LETIVO DO PRÓPRIO HORARIO)
+    /*$stmt = $pdo->prepare("
         SELECT 1
         FROM horario h
-        JOIN turma t ON t.id_turma = h.id_turma
         WHERE h.id_professor = ?
+          AND h.id_ano_letivo = ?
           AND h.id_turno     = ?
           AND h.dia_semana   = ?
           AND h.numero_aula  = ?
-          AND t.id_ano_letivo = ?
-          AND h.id_horario <> ?
+          AND h.id_horario  <> ?
         LIMIT 1
     ");
     $stmt->execute([
         $id_professor,
-        (int)$dados['id_turno'],
-        $dados['dia_semana'],
-        (int)$dados['numero_aula'],
         (int)$dados['id_ano_letivo'],
+        (int)$dados['id_turno'],
+        (string)$dados['dia_semana'],
+        (int)$dados['numero_aula'],
         $id_horario
     ]);
 
     if ($stmt->fetchColumn()) {
-        echo json_encode(['status' => 'error', 'message' => 'Professor já está alocado neste turno/dia/aula.']);
+        echo json_encode(['status' => 'error', 'message' => 'Professor já está alocado neste ano/turno/dia/aula.']);
+        exit;
+    }*/
+
+    // 2) Conflito do professor (mesmo ano/turno/dia/aula em OUTRA turma)
+    $stmt = $pdo->prepare("
+        SELECT 1
+        FROM horario h
+        WHERE h.id_professor = ?
+        AND h.id_ano_letivo = ?
+        AND h.id_turno     = ?
+        AND h.dia_semana   = ?
+        AND h.numero_aula  = ?
+        AND h.id_turma    <> ?      -- ✅ outra turma
+        LIMIT 1
+    ");
+    $stmt->execute([
+        $id_professor,
+        (int)$dados['id_ano_letivo'],
+        (int)$dados['id_turno'],
+        (string)$dados['dia_semana'],
+        (int)$dados['numero_aula'],
+        (int)$dados['id_turma'],
+    ]);
+
+    if ($stmt->fetchColumn()) {
+        echo json_encode(['status' => 'error', 'message' => 'Professor já está alocado neste ano/turno/dia/aula em outra turma.']);
         exit;
     }
 
+
     // 3) UPDATE
+    /*$stmt = $pdo->prepare("
+        UPDATE horario
+        SET id_disciplina = ?,
+            id_professor  = ?
+        WHERE id_horario = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$id_disciplina, $id_professor, $id_horario]);
+
+    echo json_encode(['status' => 'success', 'message' => 'Horário atualizado com sucesso.']);
+    exit;*/
+    // 3) UPDATE (não altera slot: ano/turma/turno/dia/aula)
     $stmt = $pdo->prepare("
         UPDATE horario
         SET id_disciplina = ?,
@@ -90,12 +128,17 @@ try {
     echo json_encode(['status' => 'success', 'message' => 'Horário atualizado com sucesso.']);
     exit;
 
+
 } catch (PDOException $e) {
     if ((int)($e->errorInfo[1] ?? 0) === 1062) {
-        echo json_encode(['status' => 'error', 'message' => 'Conflito: este slot já está ocupado (turma ou professor).']);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Não foi possível salvar este horário. Verifique conflitos e restrições.'
+        ]);
         exit;
     }
     echo json_encode(['status' => 'error', 'message' => 'Erro ao atualizar horário.']);
     exit;
 }
-?>
+
+?> 

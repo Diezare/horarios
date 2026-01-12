@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $id_turma    = (int)($_POST['id_turma'] ?? 0);
-$id_turno    = (int)($_POST['id_turno'] ?? 0); // NOVO
+$id_turno    = (int)($_POST['id_turno'] ?? 0);
 $dia_semana  = trim((string)($_POST['dia_semana'] ?? ''));
 $numero_aula = (int)($_POST['numero_aula'] ?? 0);
 
@@ -31,35 +31,58 @@ if ($idUsuario <= 0) {
 }
 
 try {
-    // 1) Verifica permissão do usuário para a turma e coerência do turno
+    // 1) Permissão + pega ano letivo e confere turno
     $stmt = $pdo->prepare("
-        SELECT 1
+        SELECT t.id_ano_letivo, t.id_turno
         FROM turma t
         JOIN serie s ON t.id_serie = s.id_serie
         JOIN nivel_ensino ne ON s.id_nivel_ensino = ne.id_nivel_ensino
         JOIN usuario_niveis un ON un.id_nivel_ensino = ne.id_nivel_ensino
         WHERE t.id_turma = ?
-          AND t.id_turno = ?
           AND un.id_usuario = ?
         LIMIT 1
     ");
-    $stmt->execute([$id_turma, $id_turno, $idUsuario]);
+    $stmt->execute([$id_turma, $idUsuario]);
+    $turma = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$stmt->fetchColumn()) {
-        echo json_encode(['status' => 'error', 'message' => 'Sem permissão para esta turma/turno.']);
+    if (!$turma) {
+        echo json_encode(['status' => 'error', 'message' => 'Sem permissão para esta turma.']);
         exit;
     }
 
-    // 2) Delete direto pelo slot (turma + turno + dia + aula)
-    $stmtDel = $pdo->prepare("
+    if ((int)$turma['id_turno'] !== $id_turno) {
+        echo json_encode(['status' => 'error', 'message' => 'Turno informado não corresponde ao turno da turma.']);
+        exit;
+    }
+
+    $idAnoLetivo = (int)$turma['id_ano_letivo'];
+    if ($idAnoLetivo <= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'Turma sem ano letivo válido.']);
+        exit;
+    }
+
+    // 2) Delete pelo slot (com ano letivo)
+    /*$stmtDel = $pdo->prepare("
         DELETE FROM horario
-        WHERE id_turma = ?
+        WHERE id_ano_letivo = ?
+          AND id_turma = ?
           AND id_turno = ?
           AND dia_semana = ?
           AND numero_aula = ?
         LIMIT 1
     ");
-    $stmtDel->execute([$id_turma, $id_turno, $dia_semana, $numero_aula]);
+    $stmtDel->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula]);
+    */
+    $stmtDel = $pdo->prepare("
+        DELETE FROM horario
+        WHERE id_ano_letivo = ?
+        AND id_turma      = ?
+        AND id_turno      = ?
+        AND dia_semana    = ?
+        AND numero_aula   = ?
+    ");
+    $stmtDel->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula]);
+
 
     if ($stmtDel->rowCount() > 0) {
         echo json_encode(['status' => 'success', 'message' => 'Horário removido com sucesso.']);

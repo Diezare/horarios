@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $id_turma      = (int)($_POST['id_turma'] ?? 0);
-$id_turno      = (int)($_POST['id_turno'] ?? 0); // NOVO
+$id_turno      = (int)($_POST['id_turno'] ?? 0);
 $dia_semana    = trim((string)($_POST['dia_semana'] ?? ''));
 $numero_aula   = (int)($_POST['numero_aula'] ?? 0);
 $id_disciplina = (int)($_POST['id_disciplina'] ?? 0);
@@ -33,7 +33,7 @@ if ($idUsuario <= 0) {
 }
 
 try {
-    // 1) turma + permissão + ano_letivo + turno (confere coerência do id_turno)
+    // 1) turma + permissão + ano_letivo + turno
     $sqlTurma = "
         SELECT
             t.id_turma,
@@ -62,45 +62,96 @@ try {
     }
 
     $idAnoLetivo = (int)$turma['id_ano_letivo'];
-
-    // 2) Bloqueio de conflito do professor no mesmo slot (AGORA COM TURNO)
-    $sqlConflito = "
-        SELECT 1
-        FROM horario h
-        JOIN turma t ON t.id_turma = h.id_turma
-        WHERE h.id_professor = ?
-          AND h.id_turno     = ?
-          AND h.dia_semana   = ?
-          AND h.numero_aula  = ?
-          AND t.id_ano_letivo = ?
-        LIMIT 1
-    ";
-    $stmt = $pdo->prepare($sqlConflito);
-    $stmt->execute([$id_professor, $id_turno, $dia_semana, $numero_aula, $idAnoLetivo]);
-    if ($stmt->fetchColumn()) {
-        echo json_encode(['status' => 'error', 'message' => 'Professor já está alocado neste turno/dia/aula em outra turma.']);
+    if ($idAnoLetivo <= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'Turma sem ano letivo válido.']);
         exit;
     }
 
-    // 3) INSERT (inclui id_turno)
-    $stmt = $pdo->prepare("
+    // 2) Conflito do professor no mesmo slot (AGORA COM ANO LETIVO NO PRÓPRIO HORARIO)
+    /*$sqlConflito = "
+        SELECT 1
+        FROM horario h
+        WHERE h.id_professor = ?
+          AND h.id_ano_letivo = ?
+          AND h.id_turno     = ?
+          AND h.dia_semana   = ?
+          AND h.numero_aula  = ?
+        LIMIT 1
+    ";
+    $stmt = $pdo->prepare($sqlConflito);
+    $stmt->execute([$id_professor, $idAnoLetivo, $id_turno, $dia_semana, $numero_aula]);
+    */
+
+    $sqlConflito = "
+        SELECT 1
+        FROM horario h
+        WHERE h.id_professor = ?
+        AND h.id_ano_letivo = ?
+        AND h.id_turno     = ?
+        AND h.dia_semana   = ?
+        AND h.numero_aula  = ?
+        AND h.id_turma <> ?         -- ✅ ignora a própria turma
+        LIMIT 1
+    ";
+    $stmt = $pdo->prepare($sqlConflito);
+    $stmt->execute([$id_professor, $idAnoLetivo, $id_turno, $dia_semana, $numero_aula, $id_turma]);
+
+
+    if ($stmt->fetchColumn()) {
+        echo json_encode(['status' => 'error', 'message' => 'Professor já está alocado neste ano/turno/dia/aula em outra turma.']);
+        exit;
+    }
+
+    // 3) INSERT (inclui id_ano_letivo e id_turno) -> compatível com uq_slot
+    /*$stmt = $pdo->prepare("
         INSERT INTO horario (
+            id_ano_letivo,
             id_turma,
             id_turno,
             dia_semana,
             numero_aula,
             id_disciplina,
             id_professor
-        ) VALUES (?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
-    $stmt->execute([$id_turma, $id_turno, $dia_semana, $numero_aula, $id_disciplina, $id_professor]);
+    $stmt->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula, $id_disciplina, $id_professor]);
 
     $newId = (int)$pdo->lastInsertId();
+    */
+
+    $stmt = $pdo->prepare("
+        INSERT INTO horario (
+            id_ano_letivo,
+            id_turma,
+            id_turno,
+            dia_semana,
+            numero_aula,
+            id_disciplina,
+            id_professor
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            id_disciplina = VALUES(id_disciplina),
+            id_professor  = VALUES(id_professor)
+    ");
+    $stmt->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula, $id_disciplina, $id_professor]);
+
+    // pegar o id da linha (inserida ou atualizada)
+    $stmt = $pdo->prepare("
+        SELECT id_horario
+        FROM horario
+        WHERE id_ano_letivo=? AND id_turma=? AND id_turno=? AND dia_semana=? AND numero_aula=?
+        LIMIT 1
+    ");
+    $stmt->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula]);
+    $newId = (int)$stmt->fetchColumn();
+
+
 
     // 4) Retorna o registro criado
     $stmt = $pdo->prepare("
         SELECT
             h.id_horario,
+            h.id_ano_letivo,
             h.id_turma,
             h.id_turno,
             h.dia_semana,
@@ -121,11 +172,19 @@ try {
     exit;
 
 } catch (PDOException $e) {
-    // 1062 = violação de unique (uq_prof_slot / uq_turma_slot)
+    // 1062 = violação de unique (uq_slot ou outra)
+    /*if ((int)($e->errorInfo[1] ?? 0) === 1062) {
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'Conflito: este slot já está ocupado (mesma turma/turno/dia/aula neste ano letivo).'
+        ]);
+        exit;
+    }*/
+
     if ((int)($e->errorInfo[1] ?? 0) === 1062) {
         echo json_encode([
             'status'  => 'error',
-            'message' => 'Conflito: este slot já está ocupado (turma ou professor).'
+            'message' => 'Não foi possível salvar este horário. Verifique conflitos e restrições.'
         ]);
         exit;
     }
