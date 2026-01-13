@@ -530,3 +530,7 @@
 [2026-01-10 17:01:05] Usuário: 1 | Nome Usuário: Diezare.Conde | IP: ::1 | Status: Sucesso no login.
 [2026-01-11 18:08:57] saida_sistema_por_inatividade user_id=1
 [2026-01-11 18:09:05] Usuário: 1 | Nome Usuário: Diezare.Conde | IP: ::1 | Status: Sucesso no login.
+[2026-01-11 22:53:26] Usuário: 1 | Nome Usuário: Diezare.Conde | IP: ::1 | Status: Saiu do sistema e/ou tempo se encerrou.
+[2026-01-11 22:53:30] Usuário: 0 | Nome Usuário: Desconhecido | IP: ::1 | Status: Saiu do sistema e/ou tempo se encerrou.
+[2026-01-12 20:42:35] acesso_negado_login
+[2026-01-12 20:42:42] Usuário: 1 | Nome Usuário: Diezare.Conde | IP: ::1 | Status: Sucesso no login.

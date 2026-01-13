@@ -106,7 +106,7 @@ try {
     $stmt = $pdo->prepare($sqlHorarios);
     $stmt->execute([$id_turma, $id_turno, $idAnoLetivo]);
     $horarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
+ 
 
     echo json_encode([
         'status' => 'success',

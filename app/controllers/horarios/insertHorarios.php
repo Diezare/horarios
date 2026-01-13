@@ -9,13 +9,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $id_turma      = (int)($_POST['id_turma'] ?? 0);
-$id_turno      = (int)($_POST['id_turno'] ?? 0);
+$id_turno_post = (int)($_POST['id_turno'] ?? 0); // só valida coerência
 $dia_semana    = trim((string)($_POST['dia_semana'] ?? ''));
 $numero_aula   = (int)($_POST['numero_aula'] ?? 0);
 $id_disciplina = (int)($_POST['id_disciplina'] ?? 0);
 $id_professor  = (int)($_POST['id_professor'] ?? 0);
 
-if ($id_turma <= 0 || $id_turno <= 0 || $dia_semana === '' || $numero_aula <= 0 || $id_disciplina <= 0 || $id_professor <= 0) {
+// opcional: ano selecionado (só valida coerência)
+$id_ano_letivo_post = (int)($_POST['id_ano_letivo'] ?? 0);
+
+if ($id_turma <= 0 || $dia_semana === '' || $numero_aula <= 0 || $id_disciplina <= 0 || $id_professor <= 0) {
     echo json_encode(['status' => 'error', 'message' => 'Dados insuficientes.']);
     exit;
 }
@@ -33,7 +36,7 @@ if ($idUsuario <= 0) {
 }
 
 try {
-    // 1) turma + permissão + ano_letivo + turno
+    // 1) turma + permissão + ano_letivo + turno (verdade)
     $sqlTurma = "
         SELECT
             t.id_turma,
@@ -56,69 +59,49 @@ try {
         exit;
     }
 
-    if ((int)$turma['id_turno'] !== $id_turno) {
-        echo json_encode(['status' => 'error', 'message' => 'Turno informado não corresponde ao turno da turma.']);
-        exit;
-    }
-
     $idAnoLetivo = (int)$turma['id_ano_letivo'];
+    $idTurno     = (int)$turma['id_turno'];
+
     if ($idAnoLetivo <= 0) {
         echo json_encode(['status' => 'error', 'message' => 'Turma sem ano letivo válido.']);
         exit;
     }
+    if ($idTurno <= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'Turno inválido para a turma.']);
+        exit;
+    }
 
-    // 2) Conflito do professor no mesmo slot (AGORA COM ANO LETIVO NO PRÓPRIO HORARIO)
-    /*$sqlConflito = "
-        SELECT 1
-        FROM horario h
-        WHERE h.id_professor = ?
-          AND h.id_ano_letivo = ?
-          AND h.id_turno     = ?
-          AND h.dia_semana   = ?
-          AND h.numero_aula  = ?
-        LIMIT 1
-    ";
-    $stmt = $pdo->prepare($sqlConflito);
-    $stmt->execute([$id_professor, $idAnoLetivo, $id_turno, $dia_semana, $numero_aula]);
-    */
+    // 1.1) Valida coerência com o que a tela mandou (se mandou)
+    if ($id_turno_post > 0 && $id_turno_post !== $idTurno) {
+        echo json_encode(['status' => 'error', 'message' => 'Turno informado não corresponde ao turno da turma.']);
+        exit;
+    }
+    if ($id_ano_letivo_post > 0 && $id_ano_letivo_post !== $idAnoLetivo) {
+        echo json_encode(['status' => 'error', 'message' => 'Ano letivo informado não corresponde ao ano da turma.']);
+        exit;
+    }
 
+    // 2) Conflito do professor no mesmo slot em OUTRA turma
     $sqlConflito = "
         SELECT 1
         FROM horario h
         WHERE h.id_professor = ?
-        AND h.id_ano_letivo = ?
-        AND h.id_turno     = ?
-        AND h.dia_semana   = ?
-        AND h.numero_aula  = ?
-        AND h.id_turma <> ?         -- ✅ ignora a própria turma
+          AND h.id_ano_letivo = ?
+          AND h.id_turno      = ?
+          AND h.dia_semana    = ?
+          AND h.numero_aula   = ?
+          AND h.id_turma     <> ?
         LIMIT 1
     ";
     $stmt = $pdo->prepare($sqlConflito);
-    $stmt->execute([$id_professor, $idAnoLetivo, $id_turno, $dia_semana, $numero_aula, $id_turma]);
-
+    $stmt->execute([$id_professor, $idAnoLetivo, $idTurno, $dia_semana, $numero_aula, $id_turma]);
 
     if ($stmt->fetchColumn()) {
         echo json_encode(['status' => 'error', 'message' => 'Professor já está alocado neste ano/turno/dia/aula em outra turma.']);
         exit;
     }
 
-    // 3) INSERT (inclui id_ano_letivo e id_turno) -> compatível com uq_slot
-    /*$stmt = $pdo->prepare("
-        INSERT INTO horario (
-            id_ano_letivo,
-            id_turma,
-            id_turno,
-            dia_semana,
-            numero_aula,
-            id_disciplina,
-            id_professor
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula, $id_disciplina, $id_professor]);
-
-    $newId = (int)$pdo->lastInsertId();
-    */
-
+    // 3) UPSERT: sempre grava ano/turno corretos (e corrige linhas antigas 0)
     $stmt = $pdo->prepare("
         INSERT INTO horario (
             id_ano_letivo,
@@ -131,23 +114,23 @@ try {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             id_disciplina = VALUES(id_disciplina),
-            id_professor  = VALUES(id_professor)
+            id_professor  = VALUES(id_professor),
+            id_ano_letivo = VALUES(id_ano_letivo),
+            id_turno      = VALUES(id_turno)
     ");
-    $stmt->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula, $id_disciplina, $id_professor]);
+    $stmt->execute([$idAnoLetivo, $id_turma, $idTurno, $dia_semana, $numero_aula, $id_disciplina, $id_professor]);
 
-    // pegar o id da linha (inserida ou atualizada)
+    // 4) Pega o id_horario do slot (inserido ou atualizado)
     $stmt = $pdo->prepare("
         SELECT id_horario
         FROM horario
         WHERE id_ano_letivo=? AND id_turma=? AND id_turno=? AND dia_semana=? AND numero_aula=?
         LIMIT 1
     ");
-    $stmt->execute([$idAnoLetivo, $id_turma, $id_turno, $dia_semana, $numero_aula]);
+    $stmt->execute([$idAnoLetivo, $id_turma, $idTurno, $dia_semana, $numero_aula]);
     $newId = (int)$stmt->fetchColumn();
 
-
-
-    // 4) Retorna o registro criado
+    // 5) Retorna o registro
     $stmt = $pdo->prepare("
         SELECT
             h.id_horario,
@@ -166,21 +149,12 @@ try {
 
     echo json_encode([
         'status' => 'success',
-        'message'=> 'Horário inserido com sucesso.',
+        'message'=> 'Horário salvo com sucesso.',
         'data'   => $stmt->fetch(PDO::FETCH_ASSOC)
     ]);
     exit;
 
 } catch (PDOException $e) {
-    // 1062 = violação de unique (uq_slot ou outra)
-    /*if ((int)($e->errorInfo[1] ?? 0) === 1062) {
-        echo json_encode([
-            'status'  => 'error',
-            'message' => 'Conflito: este slot já está ocupado (mesma turma/turno/dia/aula neste ano letivo).'
-        ]);
-        exit;
-    }*/
-
     if ((int)($e->errorInfo[1] ?? 0) === 1062) {
         echo json_encode([
             'status'  => 'error',
@@ -191,7 +165,7 @@ try {
 
     echo json_encode([
         'status'  => 'error',
-        'message' => 'Erro ao inserir horário.'
+        'message' => 'Erro ao inserir horário: ' . $e->getMessage()
     ]);
     exit;
 }

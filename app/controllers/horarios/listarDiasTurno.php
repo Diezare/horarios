@@ -82,4 +82,4 @@ try {
 	echo json_encode(['status' => 'error', 'message' => 'Erro ao buscar dias: ' . $e->getMessage()]);
 	exit;
 }
-?>
+?> 

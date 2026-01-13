@@ -35,7 +35,7 @@ if ($dia_semana !== '' && !in_array($dia_semana, $validDias, true)) {
   echo json_encode(['status' => 'error', 'message' => 'Dia da semana inválido.']);
   exit;
 }
-
+ 
 try {
   /**
    * 1) Carrega dados do horário original + valida permissão do usuário via nível

@@ -15,11 +15,25 @@ try {
     }
 
     // Fallback: se não veio turno, pega da turma (evita “não carrega”)
-    if ($id_turno <= 0) {
+    /*if ($id_turno <= 0) {
         $st = $pdo->prepare("SELECT turno_id FROM turma WHERE id_turma = ?");
         $st->execute([$id_turma]);
         $id_turno = (int)($st->fetchColumn() ?: 0);
+    }*/
+
+        // Fallback: se não veio turno, pega da turma
+    if ($id_turno <= 0) {
+        $st = $pdo->prepare("SELECT id_turno FROM turma WHERE id_turma = ? LIMIT 1");
+        $st->execute([$id_turma]);
+        $id_turno = (int)($st->fetchColumn() ?: 0);
     }
+
+    // ✅ validação aqui (antes do SELECT do horario)
+    if ($id_turno <= 0) {
+        echo json_encode(['ok' => false, 'erro' => 'Turno não identificado para a turma.']);
+        exit;
+    }
+   
 
     $sql = "
         SELECT

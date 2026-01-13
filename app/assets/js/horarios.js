@@ -746,9 +746,12 @@ if (btnAutomatico) {
 async function loadHorariosTurma(idTurma) {
   try {
     const turno = String(idTurnoSelecionado || '');
+    const ano   = String(idAnoSelecionado || '');
+
     const url =
       `/horarios/app/controllers/horarios/listHorarios.php` +
       `?id_turma=${encodeURIComponent(idTurma)}` +
+      (ano   ? `&id_ano_letivo=${encodeURIComponent(ano)}` : '') +
       (turno ? `&id_turno=${encodeURIComponent(turno)}` : '');
 
     const resp = await fetchJson(url);
@@ -769,6 +772,7 @@ async function loadHorariosTurma(idTurma) {
     dadosTurma = null;
   }
 }
+
 
 
   async function loadTurmaTurnoLookup(idAno, idNivel) {
@@ -1719,7 +1723,13 @@ async function deletaNoBanco(diaSemana, numeroAula, idHorario, discId) {
         alert('Selecione uma turma para imprimir o horário.');
         return;
       }
-      const url = `/horarios/app/views/horarios-turma.php?id_turma=${encodeURIComponent(idTurmaSelecionada)}&orient=Landscape`;
+      //const url = `/horarios/app/views/horarios-turma.php?id_turma=${encodeURIComponent(idTurmaSelecionada)}&orient=Landscape`;
+      const url =
+        `/horarios/app/views/horarios-turma.php` +
+        `?id_turma=${encodeURIComponent(idTurmaSelecionada)}` +
+        `&id_ano_letivo=${encodeURIComponent(idAnoSelecionado)}` +
+        `&id_turno=${encodeURIComponent(idTurnoSelecionado)}` +
+        `&orient=Landscape`;
       window.open(url, '_blank');
     });
   }
@@ -1731,4 +1741,5 @@ async function deletaNoBanco(diaSemana, numeroAula, idHorario, discId) {
   // =============================================
   showNoData();
   loadAnosLetivos();
+
 });
