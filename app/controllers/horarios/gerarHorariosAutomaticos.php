@@ -1160,6 +1160,21 @@ try {
         }
     }
 
+    // depois da FASE 7 (validação) e antes da FASE 8 (salvar)
+
+    if ($totalVazios > 0 || !empty($faltasGlobais)) {
+        // não grava nada
+        $pdo->rollBack();
+
+        // mensagem bem objetiva + diagnóstico
+        throw new Exception(
+            "Não foi possível gerar 100% respeitando as restrições.\n" .
+            "Vazios: $totalVazios\n" .
+            (!empty($faltasGlobais) ? ("Faltas:\n- " . implode("\n- ", $faltasGlobais)) : "")
+        );
+    }
+
+
     // ---------------- FASE 8: salvar ----------------
     logMsg("\n>>> FASE 8: Salvando");
 
