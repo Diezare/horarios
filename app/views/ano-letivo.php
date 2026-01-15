@@ -1,314 +1,434 @@
 <?php
-// app/views/ano-letivo.php - VERSÃO PADRONIZADA (verificação id_instituicao aplicada)
+// app/views/ano-letivo.php
 require_once __DIR__ . '/../../configs/init.php';
 require_once __DIR__ . '/../../libs/fpdf/fpdf.php';
 
-/* ---------------- CONFIG ---------------- */
-$PARAMS_ESPERADOS = ['id_ano', 'turma', 'prof_restricao'];
-$LOG_PATH = __DIR__ . '/../../logs/seguranca.log';
-$DEFAULT_BAD = 'Parâmetros inválidos';
-
-/* ---------------- LOG e ABORT ---------------- */
-function logSecurity(string $msg): void {
-    global $LOG_PATH;
-    $meta = [
-        'ts'=>date('c'),
-        'ip'=>$_SERVER['REMOTE_ADDR'] ?? 'unknown',
-        'ua'=>$_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
-        'qs'=>$_SERVER['QUERY_STRING'] ?? '',
-        'script'=>basename($_SERVER['SCRIPT_NAME'] ?? '')
-    ];
-    $entry = '['.date('d-M-Y H:i:s T').'] [SEGURANCA] '.$msg.' | META='.json_encode($meta, JSON_UNESCAPED_UNICODE).PHP_EOL;
-    $dir = dirname($LOG_PATH);
-    if (!is_dir($dir)) @mkdir($dir, 0750, true);
-    @file_put_contents($LOG_PATH, $entry, FILE_APPEND | LOCK_EX);
-}
-function abortInvalid(): void { http_response_code(400); die('Parâmetros inválidos'); }
-function abortServer(): void  { http_response_code(500); die('Parâmetros inválidos'); }
-function abortNotFound(): void{ http_response_code(404); die('Parâmetros inválidos'); }
-
-/* ---------------- HELPERS ---------------- */
-function enc(string $s): string { return iconv('UTF-8', 'ISO-8859-1//TRANSLIT', (string)$s); }
-function fmtDate($d): string { $ts = strtotime($d); return $ts ? date('d/m/Y', $ts) : ''; }
-
-/* ---------------- VALIDAÇÃO WHITELIST ---------------- */
-// rejeita parâmetros extras
-$extras = array_diff(array_keys($_GET), $PARAMS_ESPERADOS);
-if (!empty($extras)) {
-    logSecurity('Parâmetros inesperados: ' . implode(', ', $extras));
-    abortInvalid();
-}
-
-// id_ano obrigatório e válido
-if (!array_key_exists('id_ano', $_GET)) {
-    logSecurity('id_ano ausente | QS: ' . ($_SERVER['QUERY_STRING'] ?? ''));
-    abortInvalid();
-}
-$id_ano = filter_input(INPUT_GET, 'id_ano', FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
-if (!$id_ano) {
-    logSecurity('id_ano inválido: ' . ($_GET['id_ano'] ?? ''));
-    abortInvalid();
-}
-
-// turma se presente só aceita 1
-$turma_filter = null;
-if (array_key_exists('turma', $_GET)) {
-    $turma_raw = $_GET['turma'];
-    $turma_filter = filter_var($turma_raw, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
-    if ($turma_filter !== 1) {
-        logSecurity('turma inválido: ' . $turma_raw);
-        abortInvalid();
-    }
-}
-
-// prof_restricao se presente aceita 'todas' ou id numérico >=1
-$prof_filter = null;
-if (array_key_exists('prof_restricao', $_GET)) {
-    $prof_raw = (string)$_GET['prof_restricao'];
-    if (mb_strtolower($prof_raw, 'UTF-8') === 'todas') {
-        $prof_filter = 'todas';
-    } else {
-        $prof_id = filter_var($prof_raw, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
-        if ($prof_id === false) {
-            logSecurity('prof_restricao inválido: ' . $prof_raw);
-            abortInvalid();
-        }
-        $prof_filter = (int)$prof_id;
-    }
-}
-
-/* ---------------- CHECAGEM DE PROPRIEDADE (id_instituicao) ---------------- */
-/*
- Se a sessão fornece id_instituicao, confirmamos que o ano pertence à essa instituição.
- Isso bloqueia leitura de dados entre instituições.
-*/
-$sessionInst = $_SESSION['id_instituicao'] ?? null;
-
-/* ---------------- CONSULTAS SEGURAS ---------------- */
-try {
-    // busca do ano letivo solicitado com verificação de propriedade quando aplicável
-    if ($sessionInst !== null) {
-        $stmtAno = $pdo->prepare("SELECT id_ano_letivo, ano, data_inicio, data_fim, id_instituicao FROM ano_letivo WHERE id_ano_letivo = :id AND id_instituicao = :inst LIMIT 1");
-        $stmtAno->execute([':id' => $id_ano, ':inst' => $sessionInst]);
-    } else {
-        $stmtAno = $pdo->prepare("SELECT id_ano_letivo, ano, data_inicio, data_fim, id_instituicao FROM ano_letivo WHERE id_ano_letivo = :id LIMIT 1");
-        $stmtAno->execute([':id' => $id_ano]);
-    }
-    $ano = $stmtAno->fetch(PDO::FETCH_ASSOC);
-    if (!$ano) {
-        logSecurity("Ano letivo não encontrado ou sem permissão: id_ano={$id_ano} | sess_inst=" . ($sessionInst ?? 'null'));
-        abortNotFound();
-    }
-
-    // dados da instituição para cabeçalho
-    $stmtInst = $pdo->prepare("SELECT nome_instituicao, imagem_instituicao FROM instituicao WHERE id_instituicao = :inst LIMIT 1");
-    if ($sessionInst !== null) {
-        $stmtInst->execute([':inst' => $sessionInst]);
-        $inst = $stmtInst->fetch(PDO::FETCH_ASSOC) ?: [];
-    } else {
-        // se não há sessão, pega a primeira instituição cadastrada (comportamento anterior)
-        $stmtInst = $pdo->prepare("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
-        $stmtInst->execute();
-        $inst = $stmtInst->fetch(PDO::FETCH_ASSOC) ?: [];
-    }
-
-} catch (Exception $e) {
-    logSecurity('Erro SQL ao buscar ano/inst: ' . $e->getMessage() . ' | QS: ' . ($_SERVER['QUERY_STRING'] ?? ''));
-    abortServer();
-}
-
-/* ---------------- PREPARA PDF ---------------- */
-class PDF extends FPDF {
-    public function Footer() {
+class PDF extends FPDF
+{
+    public function Footer()
+    {
         $this->SetY(-15);
-        $this->SetFont('Arial','I',8);
-        $this->Cell(0,10,enc('Página '.$this->PageNo()),0,0,'L');
-        $this->Cell(0,10,enc('Impresso em: '.date('d/m/Y H:i:s')),0,0,'R');
+        $this->SetFont('Arial', 'I', 8);
+
+        $this->Cell(0, 10, iconv('UTF-8', 'ISO-8859-1', 'Página ' . $this->PageNo()), 0, 0, 'L');
+        $this->Cell(0, 10, iconv('UTF-8', 'ISO-8859-1', 'Impresso em: ' . date('d/m/Y H:i:s')), 0, 0, 'R');
     }
 }
 
-$pdf = new PDF('P','mm','A4');
+/* ---------------- helpers ---------------- */
+
+function enc($s) { return iconv('UTF-8', 'ISO-8859-1//TRANSLIT', (string)$s); }
+
+function fmtDateBR($d): string
+{
+    $ts = strtotime((string)$d);
+    return $ts ? date('d/m/Y', $ts) : '';
+}
+
+function normalizeDiaKey($diaRaw): string
+{
+    $d = trim((string)$diaRaw);
+    if ($d === '') return '';
+
+    // numérico (1..7) se existir esse padrão
+    if (ctype_digit($d)) {
+        $n = (int)$d;
+        $mapN = [1=>'Domingo',2=>'Segunda',3=>'Terca',4=>'Quarta',5=>'Quinta',6=>'Sexta',7=>'Sabado'];
+        return $mapN[$n] ?? '';
+    }
+
+    $x = mb_strtolower($d, 'UTF-8');
+    $x = strtr($x, [
+        'á'=>'a','à'=>'a','â'=>'a','ã'=>'a',
+        'é'=>'e','ê'=>'e',
+        'í'=>'i',
+        'ó'=>'o','ô'=>'o','õ'=>'o',
+        'ú'=>'u',
+        'ç'=>'c'
+    ]);
+    $x = preg_replace('/[^a-z]/', '', $x);
+
+    if ($x === 'domingo') return 'Domingo';
+    if ($x === 'segunda' || $x === 'segundafeira') return 'Segunda';
+    if ($x === 'terca'   || $x === 'tercafeira')   return 'Terca';
+    if ($x === 'quarta'  || $x === 'quartafeira')  return 'Quarta';
+    if ($x === 'quinta'  || $x === 'quintafeira')  return 'Quinta';
+    if ($x === 'sexta'   || $x === 'sextafeira')   return 'Sexta';
+    if ($x === 'sabado') return 'Sabado';
+
+    return '';
+}
+
+function diaLabel($key): string
+{
+    $labels = [
+        'Domingo' => 'Domingo',
+        'Segunda' => 'Segunda',
+        'Terca'   => 'Terça',
+        'Quarta'  => 'Quarta',
+        'Quinta'  => 'Quinta',
+        'Sexta'   => 'Sexta',
+        'Sabado'  => 'Sábado',
+    ];
+    return $labels[$key] ?? $key;
+}
+
+function parseProfFilter($raw)
+{
+    if ($raw === null) return null;
+    $s = trim((string)$raw);
+    $low = mb_strtolower($s, 'UTF-8');
+
+    // checkbox padrão: on / vazio / 1 => todas
+    if ($s === '' || $low === 'on' || $s === '1' || $low === 'true') return 'todas';
+    if ($low === 'todas') return 'todas';
+    if (ctype_digit($s) && (int)$s >= 1) return (int)$s;
+
+    // inválido => não quebra relatório
+    return 'todas';
+}
+
+/*
+ Resolve id_ano de forma robusta:
+ - se vazio/0 => null (geral)
+ - se numérico:
+    1) tenta como id_ano_letivo
+    2) se não existir, tenta como ano (ex.: 2026) e pega id_ano_letivo
+*/
+function resolveIdAnoLetivo(PDO $pdo, $raw): ?int
+{
+    $s = trim((string)$raw);
+    if ($s === '' || $s === '0') return null;
+    if (!ctype_digit($s)) return null;
+
+    $v = (int)$s;
+
+    $st = $pdo->prepare("SELECT id_ano_letivo FROM ano_letivo WHERE id_ano_letivo = :v LIMIT 1");
+    $st->execute([':v' => $v]);
+    $id = $st->fetchColumn();
+    if ($id) return (int)$id;
+
+    $st2 = $pdo->prepare("SELECT id_ano_letivo FROM ano_letivo WHERE ano = :v ORDER BY id_ano_letivo DESC LIMIT 1");
+    $st2->execute([':v' => $v]);
+    $id2 = $st2->fetchColumn();
+    if ($id2) return (int)$id2;
+
+    return null;
+}
+
+/* ---------------- 1) Parâmetros ---------------- */
+
+$id_ano_raw     = $_GET['id_ano'] ?? 0;
+$id_ano         = resolveIdAnoLetivo($pdo, $id_ano_raw); // null=geral; int=específico
+$turma_enabled  = isset($_GET['turma']);                 // checkbox: só existir já ativa
+$prof_enabled   = isset($_GET['prof_restricao']);        // idem
+$prof_filter    = $prof_enabled ? parseProfFilter($_GET['prof_restricao'] ?? null) : null;
+
+/* ---------------- 2) PDF ---------------- */
+
+$pdf = new PDF('P', 'mm', 'A4');
 $pdf->SetTitle(enc('Relatório de Ano Letivo'));
 $pdf->AddPage();
 
-/* ---------------- CABEÇALHO ---------------- */
-$LOGO_SIZE_MM = 15; $LOGO_GAP_MM = 5;
-$nomeInst = $inst['nome_instituicao'] ?? '';
-$imgInst  = $inst['imagem_instituicao'] ?? '';
-$logoPath = $imgInst ? LOGO_PATH . '/' . basename($imgInst) : null;
+/* ---------------- 3) Cabeçalho (IGUAL AO ORIGINAL) ---------------- */
+
+$LOGO_SIZE_MM = 15;
+$LOGO_GAP_MM  = 5;
+
+$stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
+$inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
 
 $topY = 12;
-$pdf->SetFont('Arial','B',14);
-$text = $nomeInst !== '' ? enc($nomeInst) : '';
-$textW = $text !== '' ? $pdf->GetStringWidth($text) : 0;
-$totalW = ($logoPath && file_exists($logoPath) ? ($LOGO_SIZE_MM + $LOGO_GAP_MM) : 0) + $textW;
-$xStart = ($pdf->GetPageWidth() - $totalW) / 2;
+if ($inst) {
+    $nomeInst = $inst['nome_instituicao'] ?? '';
 
-if ($logoPath && file_exists($logoPath)) {
-    $pdf->Image($logoPath, $xStart, $topY, $LOGO_SIZE_MM, $LOGO_SIZE_MM);
+    $pdf->SetFont('Arial','B',14);
+    $text = iconv('UTF-8','ISO-8859-1',$nomeInst);
+    $textW = $pdf->GetStringWidth($text);
+
+    $totalW = $LOGO_SIZE_MM + $LOGO_GAP_MM + $textW;
+    $pageW  = $pdf->GetPageWidth();
+    $xStart = ($pageW - $totalW) / 2;
+
+    if (!empty($inst['imagem_instituicao'])) {
+        $logoPath = LOGO_PATH . '/' . basename($inst['imagem_instituicao']);
+        if (file_exists($logoPath)) {
+            $pdf->Image($logoPath, $xStart, $topY, $LOGO_SIZE_MM, $LOGO_SIZE_MM);
+        }
+    }
+
+    $textY = $topY + ($LOGO_SIZE_MM / 2) - 5;
+    if ($textY < $topY) $textY = $topY;
+
+    $pdf->SetXY($xStart + $LOGO_SIZE_MM + $LOGO_GAP_MM, $textY);
+    $pdf->Cell($textW + 1, 10, $text, 0, 1, 'L');
 }
-$textX = $xStart + ($logoPath && file_exists($logoPath) ? ($LOGO_SIZE_MM + $LOGO_GAP_MM) : 0);
-$pdf->SetXY($textX, $topY + 2);
-if ($text !== '') $pdf->Cell($textW + 2, 8, $text, 0, 1, 'L');
 
 $pdf->SetY($topY + $LOGO_SIZE_MM + 6);
 
-/* ---------------- TÍTULO E RESUMO DO ANO ---------------- */
+/* ---------------- Título ---------------- */
+
 $pdf->SetFont('Arial','B',14);
-$pdf->Cell(0, 8, enc('Relatório de Ano Letivo - ' . ($ano['ano'] ?? '')), 0, 1, 'L');
+$pdf->Cell(0, 8, enc('Relatório de Ano Letivo'), 0, 1, 'L');
 $pdf->Ln(1);
+
+/* ---------------- 4) Tabela: Ano Letivo ---------------- */
 
 $pdf->SetFont('Arial','B',12);
 $pdf->SetFillColor(220,220,220);
-$pdf->Cell(40,8,enc('Ano Letivo'),1,0,'C',true);
-$pdf->Cell(75,8,enc('Data Início'),1,0,'C',true);
-$pdf->Cell(75,8,enc('Data Fim'),1,1,'C',true);
+$pdf->Cell(40, 8, enc('Ano Letivo'), 1, 0, 'C', true);
+$pdf->Cell(75, 8, enc('Data Início'), 1, 0, 'C', true);
+$pdf->Cell(75, 8, enc('Data Fim'),    1, 1, 'C', true);
 
 $pdf->SetFont('Arial','',11);
-$pdf->Cell(40,8,enc($ano['ano'] ?? ''),1,0,'C');
-$pdf->Cell(75,8,enc(fmtDate($ano['data_inicio'] ?? '')),1,0,'C');
-$pdf->Cell(75,8,enc(fmtDate($ano['data_fim'] ?? '')),1,1,'C');
 
-/* ---------------- TURMAS (opcional) ---------------- */
-if ($turma_filter === 1) {
-    try {
-        // JOIN com ano_letivo para garantir instituição (caso não haja sessão esta JOIN não afeta)
+if ($id_ano !== null) {
+    $stmtAno = $pdo->prepare("SELECT * FROM ano_letivo WHERE id_ano_letivo = :id LIMIT 1");
+    $stmtAno->execute([':id' => $id_ano]);
+} else {
+    $stmtAno = $pdo->query("SELECT * FROM ano_letivo ORDER BY ano");
+}
+$anos = $stmtAno->fetchAll(PDO::FETCH_ASSOC);
+
+if ($id_ano !== null && empty($anos)) {
+    $pdf->Cell(190, 8, enc('Ano letivo selecionado não foi encontrado.'), 1, 1, 'C');
+    $pdf->Output();
+    exit;
+}
+
+foreach ($anos as $a) {
+    $dataIni = fmtDateBR($a['data_inicio'] ?? '');
+    $dataFim = fmtDateBR($a['data_fim'] ?? '');
+    $pdf->Cell(40, 8, enc($a['ano'] ?? ''), 1, 0, 'C');
+    $pdf->Cell(75, 8, enc($dataIni),       1, 0, 'C');
+    $pdf->Cell(75, 8, enc($dataFim),       1, 1, 'C');
+}
+
+/* ---------------- 5) Turmas (opcional) ---------------- */
+
+if ($turma_enabled) {
+    $pdf->Ln(6);
+    $pdf->SetFont('Arial','B',13);
+    $pdf->Cell(0,8, enc('Turmas'), 0,1,'L');
+
+    $renderTabelaTurmas = function($idAnoLetivo) use ($pdo, $pdf) {
         $sqlTurmas = "
-            SELECT n.nome_nivel_ensino AS nivel,
-                   s.nome_serie AS serie,
-                   GROUP_CONCAT(t.nome_turma ORDER BY t.nome_turma SEPARATOR ', ') AS turmas
+            SELECT
+                n.nome_nivel_ensino AS nivel,
+                s.nome_serie AS serie,
+                GROUP_CONCAT(DISTINCT t.nome_turma ORDER BY t.nome_turma SEPARATOR ', ') AS turmas
             FROM turma t
             JOIN serie s ON t.id_serie = s.id_serie
             JOIN nivel_ensino n ON s.id_nivel_ensino = n.id_nivel_ensino
-            JOIN ano_letivo a ON t.id_ano_letivo = a.id_ano_letivo
-            WHERE t.id_ano_letivo = ?
+            WHERE t.id_ano_letivo = :id_ano
+            GROUP BY n.id_nivel_ensino, s.id_serie
+            ORDER BY n.nome_nivel_ensino, s.nome_serie
         ";
-        $paramsT = [$id_ano];
-        if ($sessionInst !== null) {
-            $sqlTurmas .= " AND a.id_instituicao = ?";
-            $paramsT[] = $sessionInst;
-        }
-        $sqlTurmas .= " GROUP BY n.id_nivel_ensino, s.id_serie
-                        ORDER BY n.nome_nivel_ensino, s.nome_serie";
-        $stmtT = $pdo->prepare($sqlTurmas);
-        $stmtT->execute($paramsT);
-        $turmas = $stmtT->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
-        logSecurity('Erro consulta turmas: ' . $e->getMessage());
-        $turmas = [];
-    }
-
-    if (!empty($turmas)) {
-        $pdf->Ln(6);
-        $pdf->SetFont('Arial','B',13);
-        $pdf->Cell(0,8,enc('Turmas'),0,1,'L');
+        $stT = $pdo->prepare($sqlTurmas);
+        $stT->bindValue(':id_ano', (int)$idAnoLetivo, PDO::PARAM_INT);
+        $stT->execute();
+        $turmas = $stT->fetchAll(PDO::FETCH_ASSOC);
 
         $pdf->SetFont('Arial','B',11);
         $pdf->SetFillColor(200,200,200);
-        $pdf->Cell(60,8,enc('Nível de Ensino'),1,0,'C',true);
-        $pdf->Cell(40,8,enc('Série'),1,0,'C',true);
-        $pdf->Cell(90,8,enc('Turmas'),1,1,'C',true);
+        $pdf->Cell(60, 8, enc('Nível de Ensino'), 1, 0, 'C', true);
+        $pdf->Cell(40, 8, enc('Série'),          1, 0, 'C', true);
+        $pdf->Cell(90, 8, enc('Turmas'),         1, 1, 'C', true);
 
         $pdf->SetFont('Arial','',10);
-        foreach ($turmas as $t) {
-            $pdf->Cell(60,8,enc($t['nivel'] ?? ''),1,0,'C');
-            $pdf->Cell(40,8,enc($t['serie'] ?? ''),1,0,'C');
-            $pdf->Cell(90,8,enc($t['turmas'] ?? ''),1,1,'C');
+        if (empty($turmas)) {
+            $pdf->Cell(190, 8, enc('Nenhuma turma encontrada.'), 1, 1, 'C');
+        } else {
+            foreach ($turmas as $t) {
+                $pdf->Cell(60, 8, enc($t['nivel'] ?? ''),  1, 0, 'C');
+                $pdf->Cell(40, 8, enc($t['serie'] ?? ''),  1, 0, 'C');
+                $pdf->Cell(90, 8, enc($t['turmas'] ?? ''), 1, 1, 'C');
+            }
         }
+    };
+
+    if ($id_ano === null) {
+        foreach ($anos as $a) {
+            $pdf->SetFont('Arial','B',11);
+            $pdf->Cell(0,7, enc('Ano: ' . ($a['ano'] ?? '')), 0, 1, 'L');
+            $pdf->Ln(1);
+            $renderTabelaTurmas((int)$a['id_ano_letivo']);
+            $pdf->Ln(4);
+        }
+    } else {
+        $renderTabelaTurmas($id_ano);
     }
 }
 
-/* ---------------- PROFESSOR RESTRIÇÃO (opcional) ---------------- */
-if ($prof_filter !== null) {
-    try {
-        $sqlProf = "
-            SELECT pr.id_professor, p.nome_completo AS nome_professor,
-                   pr.dia_semana, pr.numero_aula
-            FROM professor_restricoes pr
-            JOIN professor p ON pr.id_professor = p.id_professor
-            JOIN ano_letivo a ON pr.id_ano_letivo = a.id_ano_letivo
-            WHERE pr.id_ano_letivo = ?
-        ";
-        $params = [$id_ano];
-        if ($prof_filter !== 'todas') {
-            $sqlProf .= " AND pr.id_professor = ?";
-            $params[] = $prof_filter;
+/* ---------------- 6) Professor Restrição (opcional) ---------------- */
+
+if ($prof_enabled) {
+    $pdf->Ln(6);
+    $pdf->SetFont('Arial','B',13);
+    $pdf->Cell(0,8, enc('Professor Restrição'), 0,1,'L');
+
+    $diasOrdemBase = ['Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado'];
+
+    // Consulta (filtra por ano quando selecionado)
+    $sqlProf = "
+        SELECT pr.id_ano_letivo,
+               a.ano AS ano_label,
+               pr.id_professor,
+               p.nome_completo AS nome_professor,
+               pr.dia_semana,
+               pr.numero_aula
+          FROM professor_restricoes pr
+          JOIN professor p  ON pr.id_professor = p.id_professor
+          JOIN ano_letivo a ON pr.id_ano_letivo = a.id_ano_letivo
+         WHERE 1=1
+    ";
+    $params = [];
+    if ($id_ano !== null) {
+        $sqlProf .= " AND pr.id_ano_letivo = :id_ano ";
+        $params[':id_ano'] = $id_ano;
+    }
+    if ($prof_filter !== null && $prof_filter !== 'todas') {
+        $sqlProf .= " AND pr.id_professor = :p ";
+        $params[':p'] = (int)$prof_filter;
+    }
+    $sqlProf .= " ORDER BY a.ano, p.nome_completo, pr.numero_aula";
+
+    $stP = $pdo->prepare($sqlProf);
+    $stP->execute($params);
+    $rows = $stP->fetchAll(PDO::FETCH_ASSOC);
+
+    // Agrupa: ano -> professor -> dia -> aulas
+    $porAno = [];
+    $diasPresentesPorAno = []; // para decidir se Domingo/Sábado aparecem (só se existir dado)
+    foreach ($rows as $r) {
+        $anoKey = (string)($r['ano_label'] ?? '');
+        $idProf = (int)($r['id_professor'] ?? 0);
+        if ($idProf <= 0) continue;
+
+        $diaKey = normalizeDiaKey($r['dia_semana'] ?? '');
+        if ($diaKey === '') continue;
+
+        $numAula = (int)($r['numero_aula'] ?? 0);
+        if ($numAula <= 0) continue;
+
+        $diasPresentesPorAno[$anoKey][$diaKey] = true;
+
+        if (!isset($porAno[$anoKey])) $porAno[$anoKey] = [];
+        if (!isset($porAno[$anoKey][$idProf])) {
+            $porAno[$anoKey][$idProf] = ['nome' => ($r['nome_professor'] ?? ''), 'restricoes' => []];
         }
-        if ($sessionInst !== null) {
-            $sqlProf .= " AND a.id_instituicao = ?";
-            $params[] = $sessionInst;
+        if (!isset($porAno[$anoKey][$idProf]['restricoes'][$diaKey])) {
+            $porAno[$anoKey][$idProf]['restricoes'][$diaKey] = [];
         }
-        $sqlProf .= "
-            ORDER BY p.nome_completo,
-                     FIELD(pr.dia_semana,'Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado'),
-                     pr.numero_aula
-        ";
-        $stmtP = $pdo->prepare($sqlProf);
-        $stmtP->execute($params);
-        $rows = $stmtP->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
-        logSecurity('Erro consulta restricoes professor: ' . $e->getMessage());
-        $rows = [];
+        $porAno[$anoKey][$idProf]['restricoes'][$diaKey][] = $numAula;
     }
 
-    if (!empty($rows)) {
-        // agrupa por professor
-        $professores = [];
-        foreach ($rows as $r) {
-            $idProf = (int)($r['id_professor'] ?? 0);
-            if ($idProf === 0) continue;
-            $nome = $r['nome_professor'] ?? '';
-            $dia = $r['dia_semana'] ?? '';
-            $diaKey = str_replace(['ç','á','é','í','ó','ú','ã','õ','â','ê','ô',' '], ['c','a','e','i','o','u','a','o','a','e','o',''], $dia);
-            if ($diaKey === '') $diaKey = $dia;
-            $num = (int)($r['numero_aula'] ?? 0);
-            if (!isset($professores[$idProf])) $professores[$idProf] = ['nome'=>$nome,'restricoes'=>[]];
-            if (!isset($professores[$idProf]['restricoes'][$diaKey])) $professores[$idProf]['restricoes'][$diaKey] = [];
-            if ($num>0) $professores[$idProf]['restricoes'][$diaKey][] = $num;
+    // Normaliza arrays (unique + sort)
+    foreach ($porAno as $anoK => &$profs) {
+        foreach ($profs as &$info) {
+            foreach ($info['restricoes'] as &$arr) {
+                $arr = array_values(array_unique(array_map('intval', $arr)));
+                sort($arr, SORT_NUMERIC);
+            }
+            unset($arr);
         }
+        unset($info);
+    }
+    unset($profs);
 
-        // verifica se há algo válido
-        $anyValid = false;
-        foreach ($professores as $p) if (!empty($p['restricoes'])) { $anyValid = true; break; }
+    // Renderizadores para repetir em quebra de página
+    $renderTabelaHeader = function() use ($pdf) {
+        $pdf->SetFont('Arial','B',11);
+        $pdf->SetFillColor(200,200,200);
+        $pdf->Cell(70, 8, enc('Nome Professor'), 1, 0, 'C', true);
+        $pdf->Cell(60, 8, enc('Dia da Semana'),  1, 0, 'C', true);
+        $pdf->Cell(60, 8, enc('Aulas'),          1, 1, 'C', true);
+        $pdf->SetFont('Arial','',10);
+    };
 
-        if ($anyValid) {
-            $diasOrdem = ['Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado'];
-            $diaLabel = ['Domingo'=>'Domingo','Segunda'=>'Segunda','Terca'=>'Terça','Quarta'=>'Quarta','Quinta'=>'Quinta','Sexta'=>'Sexta','Sabado'=>'Sábado'];
+    $renderAnoLabel = function($anoLabel) use ($pdf) {
+        $pdf->Ln(3);
+        $pdf->SetFont('Arial','B',11);
+        $pdf->Cell(0,7, enc('Ano: ' . $anoLabel), 0, 1, 'L');
+        $pdf->SetFont('Arial','',10);
+    };
 
-            $pdf->Ln(6);
-            $pdf->SetFont('Arial','B',11);
-            $pdf->SetFillColor(200,200,200);
-            $pdf->Cell(70,8,enc('Nome Professor'),1,0,'C',true);
-            $pdf->Cell(60,8,enc('Dia da Semana'),1,0,'C',true);
-            $pdf->Cell(60,8,enc('Aulas'),1,1,'C',true);
-            $pdf->SetFont('Arial','',10);
+    $ensureSpace = function(float $neededHeight, ?string $anoLabelForRepeat) use ($pdf, $renderTabelaHeader, $renderAnoLabel, $id_ano) {
+        // margem segura inferior (não mexe no seu cabeçalho)
+        $bottomSafe = 20;
+        $limit = $pdf->GetPageHeight() - $bottomSafe;
 
-            foreach ($professores as $p) {
-                $nomeProf = $p['nome'] ?? '';
+        if (($pdf->GetY() + $neededHeight) > $limit) {
+            $pdf->AddPage();
+            // se é relatório geral (todos os anos), repetir o "Ano: X" no topo da página nova
+            if ($id_ano === null && $anoLabelForRepeat !== null && $anoLabelForRepeat !== '') {
+                $renderAnoLabel($anoLabelForRepeat);
+            }
+            // repetir cabeçalho da tabela sempre que trocar de página
+            $renderTabelaHeader();
+        }
+    };
+
+    if (empty($porAno)) {
+        $pdf->SetFont('Arial','I',11);
+        $pdf->Cell(0,8, enc('Nenhuma restrição encontrada para o filtro aplicado.'), 0, 1, 'L');
+    } else {
+        // cabeçalho da tabela na primeira vez
+        $renderTabelaHeader();
+
+        $rowH = 8;
+
+        foreach ($porAno as $anoLabel => $professores) {
+
+            // Dias efetivamente existentes nesse ano (se não existir Sáb/Dom, nem entra na checagem)
+            $diasOrdem = [];
+            foreach ($diasOrdemBase as $d) {
+                if (!empty($diasPresentesPorAno[$anoLabel][$d])) $diasOrdem[] = $d;
+            }
+            if (empty($diasOrdem)) $diasOrdem = $diasOrdemBase;
+
+            // Se geral (todos anos), separa por ano (e evita quebrar logo depois do label)
+            if ($id_ano === null) {
+                $ensureSpace(12, null);
+                $renderAnoLabel($anoLabel);
+                $renderTabelaHeader();
+            }
+
+            foreach ($professores as $dataP) {
+                $nomeProf = $dataP['nome'] ?? '';
+
+                // Dias que realmente têm restrição (DOM/SÁB só entram se houver restrição desse professor)
                 $diasDoProfessor = [];
-                foreach ($diasOrdem as $d) {
-                    $key = str_replace(['ç','á','é','í','ó','ú','ã','õ','â','ê','ô',' '], ['c','a','e','i','o','u','a','o','a','e','o',''], $d);
-                    if (!empty($p['restricoes'][$key])) $diasDoProfessor[] = $key;
+                foreach ($diasOrdem as $diaKey) {
+                    if (!empty($dataP['restricoes'][$diaKey])) {
+                        $diasDoProfessor[] = $diaKey;
+                    }
                 }
                 if (empty($diasDoProfessor)) continue;
 
-                $rowH = 8;
-                $nameHeight = $rowH * count($diasDoProfessor);
+                $linhas = count($diasDoProfessor);
+                $nameHeight = $rowH * $linhas;
+
+                // ---- FIX PRINCIPAL: não deixa começar um professor no fim da página e quebrar o bloco
+                $ensureSpace($nameHeight + 3, $anoLabel);
+
                 $x = $pdf->GetX();
                 $y = $pdf->GetY();
 
+                // célula mesclada do nome
                 $pdf->Cell(70, $nameHeight, enc($nomeProf), 1, 0, 'C');
 
+                $colDiaW  = 60;
+                $colAulaW = 60;
+
                 foreach ($diasDoProfessor as $i => $diaKey) {
-                    $lista = array_values(array_unique(array_map('intval', $p['restricoes'][$diaKey] ?? [])));
-                    sort($lista, SORT_NUMERIC);
-                    $aulasFormatadas = array_map(fn($n)=>$n.'ª', $lista);
+                    $lista = $dataP['restricoes'][$diaKey];
+                    $aulasFormatadas = array_map(function($n){ return $n.'ª'; }, $lista);
                     $aulasStr = implode(', ', $aulasFormatadas);
-                    $label = $diaLabel[$diaKey] ?? $diaKey;
 
                     $pdf->SetXY($x + 70, $y + ($i * $rowH));
-                    $pdf->Cell(60, $rowH, enc($label), 1, 0, 'C');
-                    $pdf->Cell(60, $rowH, enc($aulasStr), 1, 0, 'C');
+                    $pdf->Cell($colDiaW,  $rowH, enc(diaLabel($diaKey)), 1, 0, 'C');
+                    $pdf->Cell($colAulaW, $rowH, enc($aulasStr),         1, 0, 'C');
                 }
 
                 $pdf->SetXY($x, $y + $nameHeight);
@@ -318,7 +438,8 @@ if ($prof_filter !== null) {
     }
 }
 
-/* ---------------- SAÍDA ---------------- */
+/* ---------------- 7) Saída ---------------- */
+
 $pdf->Output();
 exit;
 ?>
