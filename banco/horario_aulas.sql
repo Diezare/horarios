@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Tempo de geração: 03/02/2026 às 17:34
+-- Tempo de geração: 04/02/2026 às 01:53
 -- Versão do servidor: 10.4.32-MariaDB
 -- Versão do PHP: 8.2.12
 
@@ -1377,7 +1377,8 @@ INSERT INTO `log_atividade` (`id_log`, `id_usuario`, `nome_usuario`, `ip_usuario
 (373, 1, 'Diezare.Conde', '::1', 'sucesso_login', '2026-01-12 20:42:42'),
 (374, 1, 'Diezare.Conde', '::1', 'sucesso_login', '2026-01-14 08:26:00'),
 (375, 1, 'Diezare.Conde', '::1', 'sucesso_login', '2026-01-14 22:14:40'),
-(376, 1, 'Diezare.Conde', '::1', 'sucesso_login', '2026-02-03 07:39:24');
+(376, 1, 'Diezare.Conde', '::1', 'sucesso_login', '2026-02-03 07:39:24'),
+(377, 1, 'Diezare.Conde', '::1', 'sucesso_login', '2026-02-03 20:55:53');
 
 -- --------------------------------------------------------
 
@@ -1497,7 +1498,8 @@ INSERT INTO `professor` (`id_professor`, `nome_completo`, `nome_exibicao`, `data
 (51, 'Sandra Lazarini', 'Sandra', '2025-12-18 12:09:24', 'Feminino', 1, '(99) 99999-9999'),
 (56, 'Ana Clara Avanci', 'Clara', '2025-12-18 12:11:43', 'Feminino', 1, '(99) 99999-9999'),
 (57, 'Wilton / Tamires', 'Wilton / Tamires', '2025-12-19 23:20:47', 'Outro', 10, '(99) 99999-9999'),
-(58, 'Andressa Fonseca', 'Andressa', '2025-12-27 10:20:22', 'Feminino', 6, '(99) 99999-9999');
+(58, 'Andressa Fonseca', 'Andressa', '2025-12-27 10:20:22', 'Feminino', 6, '(99) 99999-9999'),
+(59, 'Eduardo Campana', 'Dudi', '2026-02-03 21:03:22', 'Masculino', 20, '(99) 99999-9999');
 
 -- --------------------------------------------------------
 
@@ -1616,12 +1618,15 @@ INSERT INTO `professor_disciplinas` (`id_professor`, `id_disciplina`) VALUES
 (43, 18),
 (44, 12),
 (45, 2),
+(48, 9),
 (48, 18),
+(49, 9),
 (49, 18),
 (56, 18),
 (56, 27),
 (57, 9),
-(58, 8);
+(58, 8),
+(59, 9);
 
 -- --------------------------------------------------------
 
@@ -3853,7 +3858,7 @@ ALTER TABLE `instituicao`
 -- AUTO_INCREMENT de tabela `log_atividade`
 --
 ALTER TABLE `log_atividade`
-  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=377;
+  MODIFY `id_log` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=378;
 
 --
 -- AUTO_INCREMENT de tabela `modalidade`
@@ -3871,7 +3876,7 @@ ALTER TABLE `nivel_ensino`
 -- AUTO_INCREMENT de tabela `professor`
 --
 ALTER TABLE `professor`
-  MODIFY `id_professor` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=59;
+  MODIFY `id_professor` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=60;
 
 --
 -- AUTO_INCREMENT de tabela `remember_me_tokens`
