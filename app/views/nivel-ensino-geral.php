@@ -187,51 +187,70 @@ foreach ($niveis as $nivel) {
         $pdf->Cell(0, 8, enc('Séries e Turmas'), 0, 1, 'L');
 
         try {
+            // Lista por linha: Ano letivo + Série + Total aulas + Turno + Turma (DISTINCT evita duplicidade)
             $sqlSeries = "
-                SELECT s.id_serie, s.nome_serie, s.total_aulas_semana, t.nome_turma
+                SELECT DISTINCT
+                    COALESCE(a.ano, '-') AS ano_letivo,
+                    s.nome_serie,
+                    s.total_aulas_semana,
+                    COALESCE(tr.nome_turno, '-') AS nome_turno,
+                    COALESCE(t.nome_turma, '-') AS nome_turma
                 FROM serie s
-                LEFT JOIN turma t ON s.id_serie = t.id_serie
+                LEFT JOIN turma t      ON t.id_serie = s.id_serie
+                LEFT JOIN ano_letivo a ON a.id_ano_letivo = t.id_ano_letivo
+                LEFT JOIN turno tr     ON tr.id_turno = t.id_turno
                 WHERE s.id_nivel_ensino = :idNivel
-                ORDER BY s.nome_serie, t.nome_turma
+                ORDER BY a.ano, s.nome_serie, tr.nome_turno, t.nome_turma
             ";
             $stSeries = $pdo->prepare($sqlSeries);
             $stSeries->execute([':idNivel' => $idNivel]);
             $rows = $stSeries->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
-            logSecurity("Erro SQL series para nivel {$idNivel}: ".$e->getMessage());
+            logSecurity("Erro SQL series/turmas para nivel {$idNivel}: ".$e->getMessage());
             $rows = [];
         }
 
         if ($rows) {
-            $seriesAgrupadas = [];
-            foreach ($rows as $r) {
-                $idSer = (int)$r['id_serie'];
-                $seriesAgrupadas[$idSer] = $seriesAgrupadas[$idSer] ?? [
-                    'nome_serie' => $r['nome_serie'],
-                    'total_aulas' => $r['total_aulas_semana'],
-                    'turmas' => []
-                ];
-                if (!empty($r['nome_turma'])) $seriesAgrupadas[$idSer]['turmas'][] = $r['nome_turma'];
-            }
-
+            // Cabeçalho da tabela
             $pdf->SetFont('Arial','B',12);
             $pdf->SetFillColor(200,200,200);
-            $pdf->Cell(130, 8, enc('Série e Total de Aulas'), 1, 0, 'C', true);
-            $pdf->Cell(60, 8, enc('Turmas'), 1, 1, 'C', true);
 
+            // Larguras (total = 190mm)
+            $wAno   = 25;
+            $wSerie = 60;
+            $wAulas = 30;
+            $wTurno = 45;
+            $wTurma = 30;
+
+            $pdf->Cell($wAno,  8, enc('Ano'),        1, 0, 'C', true);
+            $pdf->Cell($wSerie,8, enc('Série'),      1, 0, 'C', true);
+            $pdf->Cell($wAulas,8, enc('Aulas/Sem'),  1, 0, 'C', true);
+            $pdf->Cell($wTurno,8, enc('Turno'),      1, 0, 'C', true);
+            $pdf->Cell($wTurma,8, enc('Turma'),      1, 1, 'C', true);
+
+            // Linhas
             $pdf->SetFont('Arial','',11);
-            foreach ($seriesAgrupadas as $sd) {
-                $nomeSerie = $sd['nome_serie'];
-                $totalAulas = $sd['total_aulas'];
-                $turmasStr = $sd['turmas'] ? implode(', ', $sd['turmas']) : '-';
-                $pdf->Cell(130, 8, enc($nomeSerie . ' - ' . $totalAulas), 1, 0, 'C');
-                $pdf->Cell(60, 8, enc($turmasStr), 1, 1, 'C');
+
+            foreach ($rows as $r) {
+                $ano   = (string)($r['ano_letivo'] ?? '-');
+                $serie = (string)($r['nome_serie'] ?? '-');
+                $aulas = (string)($r['total_aulas_semana'] ?? '-');
+                $turno = (string)($r['nome_turno'] ?? '-');
+                $turma = (string)($r['nome_turma'] ?? '-');
+
+                $pdf->Cell($wAno,  8, enc($ano),   1, 0, 'C');
+                $pdf->Cell($wSerie,8, enc($serie), 1, 0, 'C');
+                $pdf->Cell($wAulas,8, enc($aulas), 1, 0, 'C');
+                $pdf->Cell($wTurno,8, enc($turno), 1, 0, 'C');
+                $pdf->Cell($wTurma,8, enc($turma), 1, 1, 'C');
             }
+
         } else {
             $pdf->SetFont('Arial','I',11);
             $pdf->Cell(190, 8, enc('Nenhuma série cadastrada para este nível.'), 1, 1, 'C');
         }
     }
+
 
     /* ---------- Usuários (opcional) ---------- */
     if ($usuariosOpt) {

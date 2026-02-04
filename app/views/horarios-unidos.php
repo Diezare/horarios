@@ -36,36 +36,25 @@ function abortClient($msg = 'Parâmetros inválidos') {
 /* -----------------------------
    Funções utilitárias para conversão segura
 ------------------------------*/
-/**
- * Converte texto UTF-8 para ISO-8859-1 de forma tolerante.
- * Tenta iconv com TRANSLIT+IGNORE, depois tenta limpar/forçar UTF-8,
- * por fim usa utf8_decode como último recurso. Registra string crua em caso de falha.
- */
 function safeToIso(string $s): string {
-    // garantia string
     $s = (string)$s;
 
-    // 1) se parece UTF-8 válido, tente iconv com translit+ignore
     if (function_exists('mb_check_encoding') && mb_check_encoding($s, 'UTF-8')) {
         $out = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT//IGNORE', $s);
         if ($out !== false) return $out;
     }
 
-    // 2) tenta normalizar (remover bytes inválidos) e reconverter
-    $clean = @mb_convert_encoding($s, 'UTF-8', 'UTF-8'); // remove sequences inválidas
+    $clean = @mb_convert_encoding($s, 'UTF-8', 'UTF-8');
     $out = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT//IGNORE', $clean);
     if ($out !== false) return $out;
 
-    // 3) tenta como se fosse Windows-1252 (comum em uploads)
     $try1252 = @mb_convert_encoding($s, 'UTF-8', 'Windows-1252');
     $out = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT//IGNORE', $try1252);
     if ($out !== false) return $out;
 
-    // 4) fallback simples: utf8_decode (pode perder acentos)
     $out = @utf8_decode($s);
     if ($out !== false && $out !== null) return $out;
 
-    // 5) último recurso: remove bytes non-printable e retorna ASCII
     $plain = preg_replace('/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/', '', $s);
     logSecurity('safeToIso: conversão falhou, retornando fallback. raw_sample=' . substr($s,0,200));
     return $plain !== null ? $plain : '';
@@ -78,14 +67,12 @@ function safeToIso(string $s): string {
 $allowed = ['id_ano_letivo', 'id_nivel_ensino', 'id_turno'];
 parse_str($_SERVER['QUERY_STRING'] ?? '', $receivedParams);
 
-// rejeita parâmetros inesperados
 $extra = array_diff(array_keys($receivedParams), $allowed);
 if (!empty($extra)) {
     logSecurity('Parâmetros inesperados em horarios-unidos.php: ' . implode(', ', $extra));
     abortClient();
 }
 
-// normaliza recebidos e valida escalaridade
 $canonical = [];
 foreach ($allowed as $k) {
     if (isset($receivedParams[$k])) {
@@ -93,7 +80,6 @@ foreach ($allowed as $k) {
             logSecurity("Parâmetro não escalar {$k} em horarios-unidos.php");
             abortClient();
         }
-        // aceitar somente inteiros na query (sem sinal)
         $s = (string)$receivedParams[$k];
         if ($s === '') {
             $canonical[$k] = 0;
@@ -109,16 +95,15 @@ foreach ($allowed as $k) {
     }
 }
 
-// agora atribui parâmetros (canônicos)
 $id_ano_letivo   = $canonical['id_ano_letivo'];
 $id_nivel_ensino = $canonical['id_nivel_ensino'];
 $id_turno        = $canonical['id_turno'];
 
-// valida existência de ano letivo (obrigatório)
 if ($id_ano_letivo <= 0) {
     logSecurity("Ano letivo não informado em horarios-unidos.php");
     abortClient('Parâmetros inválidos');
 }
+
 $stAno = $pdo->prepare("SELECT ano FROM ano_letivo WHERE id_ano_letivo = :id LIMIT 1");
 $stAno->execute([':id' => $id_ano_letivo]);
 $anoLegivel = $stAno->fetchColumn();
@@ -127,7 +112,6 @@ if (!$anoLegivel) {
     abortClient('Parâmetros inválidos');
 }
 
-// valida opcional nível de ensino
 if ($id_nivel_ensino > 0) {
     $stN = $pdo->prepare("SELECT 1 FROM nivel_ensino WHERE id_nivel_ensino = :id LIMIT 1");
     $stN->execute([':id' => $id_nivel_ensino]);
@@ -137,7 +121,6 @@ if ($id_nivel_ensino > 0) {
     }
 }
 
-// valida opcional turno
 if ($id_turno > 0) {
     $stT = $pdo->prepare("SELECT 1 FROM turno WHERE id_turno = :id LIMIT 1");
     $stT->execute([':id' => $id_turno]);
@@ -148,15 +131,23 @@ if ($id_turno > 0) {
 }
 
 /* -----------------------------
-   Cabeçalho padrão (mesma linha)
+   CONFIG LAYOUT
 ------------------------------*/
 $LOGO_SIZE_MM = 15;
 $LOGO_GAP_MM  = 5;
 
-class PDFHorariosUnidos extends FPDF
-{
-    public function Footer()
-    {
+// altura padrão de cada linha (cada "Aula")
+$DEFAULT_LINE_H = 12.0;
+
+// fonte para conteúdo das células
+$CELL_FONT_MAX = 7;
+$CELL_FONT_MIN = 5;
+
+/* -----------------------------
+   PDF
+------------------------------*/
+class PDFHorariosUnidos extends FPDF {
+    public function Footer() {
         $this->SetY(-15);
         $this->SetFont('Arial','I',8);
         $this->Cell(0, 10, safeToIso('Página ' . $this->PageNo()), 0, 0, 'L');
@@ -176,6 +167,7 @@ $diaParaSigla = [
     'Sexta'   => 'SEX',
     'Sabado'  => 'SÁB'
 ];
+
 $siglaVertical = [
     'DOM' => "D\nO\nM\nI\nN\nG\nO",
     'SEG' => "S\nE\nG\nU\nN\nD\nA",
@@ -187,7 +179,7 @@ $siglaVertical = [
 ];
 
 /* -----------------------------
-   Funções de render (usam safeToIso)
+   Cabeçalho padrão
 ------------------------------*/
 function renderCabecalhoPadrao(
     FPDF $pdf,
@@ -202,6 +194,7 @@ function renderCabecalhoPadrao(
 ) {
     $pdf->SetY(12);
     $pdf->SetFont('Arial','B',14);
+
     $txt  = mb_substr($nomeInst, 0, 200);
     $txtEnc = safeToIso($txt);
     $txtW = $pdf->GetStringWidth($txtEnc);
@@ -213,9 +206,9 @@ function renderCabecalhoPadrao(
     $y       = $pdf->GetY();
 
     if ($hasLogo) {
-        // proteção path-traversal
         $candidate = basename($logoPath);
         $fullLogo = LOGO_PATH . '/' . $candidate;
+
         if (file_exists($fullLogo) && is_file($fullLogo)) {
             $realLogo = realpath($fullLogo);
             $realLogoDir = realpath(LOGO_PATH);
@@ -247,21 +240,135 @@ function renderCabecalhoPadrao(
     $pdf->Ln(2);
 }
 
+/* -----------------------------
+   Quebra de linhas por largura (respeita \n)
+------------------------------*/
+function splitLinesToWidth(FPDF $pdf, float $w, string $txt): array {
+    $txt = str_replace("\r", '', $txt);
+    $parts = explode("\n", $txt);
+    $lines = [];
+
+    foreach ($parts as $part) {
+        $part = trim($part);
+        if ($part === '') { $lines[] = ''; continue; }
+
+        $words = preg_split('/\s+/', $part);
+        $cur = '';
+
+        foreach ($words as $word) {
+            $test = ($cur === '') ? $word : ($cur . ' ' . $word);
+
+            if ($pdf->GetStringWidth(safeToIso($test)) <= $w) {
+                $cur = $test;
+            } else {
+                if ($cur !== '') $lines[] = $cur;
+
+                // palavra sozinha maior: quebra no caractere
+                $cur = $word;
+                while ($pdf->GetStringWidth(safeToIso($cur)) > $w && mb_strlen($cur) > 1) {
+                    $cut = mb_substr($cur, 0, mb_strlen($cur) - 1);
+                    if ($pdf->GetStringWidth(safeToIso($cut)) <= $w) {
+                        $lines[] = $cut;
+                        $cur = mb_substr($cur, mb_strlen($cur) - 1);
+                        break;
+                    }
+                    $cur = $cut;
+                }
+            }
+        }
+
+        if ($cur !== '') $lines[] = $cur;
+    }
+
+    return $lines;
+}
+
+/* -----------------------------
+   Imprime texto dentro do retângulo centralizado e reduzindo fonte
+------------------------------*/
+function drawFittedCenteredText(
+    FPDF $pdf,
+    float $x,
+    float $y,
+    float $w,
+    float $h,
+    string $txt,
+    int $maxFont = 7,
+    int $minFont = 5
+) {
+    $txt = trim($txt);
+    if ($txt === '') return;
+
+    // padding interno (ajuste fino se quiser)
+    $padX = 0.8;
+    $padY = 0.7;
+
+    $innerW = max(1, $w - ($padX * 2));
+    $innerH = max(1, $h - ($padY * 2));
+
+    for ($fs = $maxFont; $fs >= $minFont; $fs--) {
+        $pdf->SetFont('Arial', '', $fs);
+
+        // altura de linha: 0.55 costuma funcionar bem no FPDF
+        $lh = max(2.2, $fs * 0.55);
+
+        $lines = splitLinesToWidth($pdf, $innerW, $txt);
+        $textH = count($lines) * $lh;
+
+        if ($textH <= $innerH) {
+            $startY = $y + $padY + (($innerH - $textH) / 2);
+
+            $pdf->SetXY($x + $padX, $startY);
+            // imprime cada linha centralizada horizontalmente SEM "vazar" o X
+            foreach ($lines as $line) {
+                $pdf->SetX($x + $padX); // <- fixa o X dentro da célula a cada linha
+                $pdf->Cell($innerW, $lh, safeToIso($line), 0, 1, 'C');
+            }
+
+            return;
+        }
+    }
+
+    // fallback: imprime na mínima e corta linhas excedentes
+    $pdf->SetFont('Arial', '', $minFont);
+    $lh = max(2.2, $minFont * 0.55);
+    $lines = splitLinesToWidth($pdf, $innerW, $txt);
+
+    $maxLines = max(1, (int)floor($innerH / $lh));
+    $lines = array_slice($lines, 0, $maxLines);
+
+    $textH = count($lines) * $lh;
+    $startY = $y + $padY + (($innerH - $textH) / 2);
+
+    $pdf->SetXY($x + $padX, $startY);
+    // imprime cada linha centralizada horizontalmente SEM "vazar" o X
+    foreach ($lines as $line) {
+        $pdf->SetX($x + $padX); // <- fixa o X dentro da célula a cada linha
+        $pdf->Cell($innerW, $lh, safeToIso($line), 0, 1, 'C');
+    }
+
+}
+
+/* -----------------------------
+   Render Tabela (com cabeçalho)
+------------------------------*/
 function desenharTabelaComCabecalho(
     FPDF $pdf,
     array $turmas,
     array $dias,
     array $horariosMap,
     int $maxAulas,
-    array $siglaVertical
+    array $siglaVertical,
+    float $lineH,
+    int $cellFontMax,
+    int $cellFontMin
 ) {
-    // Layout
     $leftMargin   = 10;
     $rightMargin  = 10;
     $usableWidth  = $pdf->GetPageWidth() - ($leftMargin + $rightMargin);
 
-    $colDiaW      = 10;  // Dia vertical
-    $colAulaW     = 20;  // "1ª Aula"
+    $colDiaW      = 10;
+    $colAulaW     = 20;
 
     $numTurmas    = max(1, count($turmas));
     $rest         = $usableWidth - ($colDiaW + $colAulaW);
@@ -271,8 +378,9 @@ function desenharTabelaComCabecalho(
     $pdf->SetFont('Arial','B',9);
     $pdf->SetFillColor(220,220,220);
 
-    $pdf->Cell($colDiaW,  8, safeToIso('Dia'), 1,0,'C',true);
+    $pdf->Cell($colDiaW,  8, safeToIso('Dia'),  1,0,'C',true);
     $pdf->Cell($colAulaW, 8, safeToIso('Aula'), 1,0,'C',true);
+
     foreach ($turmas as $tm) {
         $rot = $tm['nome_serie'].' '.$tm['nome_turma'];
         $pdf->Cell($colTurmaW, 8, safeToIso($rot), 1,0,'C',true);
@@ -280,68 +388,77 @@ function desenharTabelaComCabecalho(
     $pdf->Ln();
     $pdf->Ln(2);
 
-    // Conteúdo
-    $pdf->SetFont('Arial','',8);
-    $lineH = 9;
-
     foreach ($dias as $diaSigla) {
         $verticalText = $siglaVertical[$diaSigla] ?? $diaSigla;
         $heightDia    = $maxAulas * $lineH;
-        $xDia         = $pdf->GetX();
-        $yDia         = $pdf->GetY();
 
+        $xDia = $pdf->GetX();
+        $yDia = $pdf->GetY();
+
+        // Coluna do dia (retângulo + texto vertical)
         $pdf->Rect($xDia, $yDia, $colDiaW, $heightDia);
 
         $numLines  = count(explode("\n",$verticalText));
         $textTotal = $numLines * 3.5;
         $startY    = $yDia + ($heightDia/2) - ($textTotal/2);
+
         $pdf->SetXY($xDia, $startY);
+        $pdf->SetFont('Arial','',8); // escolha o tamanho que você quer para TODOS os dias
+
         $pdf->MultiCell($colDiaW, 3.5, safeToIso($verticalText), 0,'C');
 
         $pdf->SetXY($xDia + $colDiaW, $yDia);
 
         for ($a=1; $a<=$maxAulas; $a++) {
+            // Aula
+            $pdf->SetFont('Arial','',7);
             $labelAula = $a.'ª Aula';
             $pdf->Cell($colAulaW, $lineH, safeToIso($labelAula), 1,0,'C');
 
             foreach ($turmas as $tm) {
-                $tID  = (int)$tm['id_turma'];
-                $txt  = $horariosMap[$tID][$diaSigla][$a] ?? '';
+                $tID = (int)$tm['id_turma'];
+                $txt = $horariosMap[$tID][$diaSigla][$a] ?? '';
+
                 $xCel = $pdf->GetX();
                 $yCel = $pdf->GetY();
+
+                // desenha borda da célula
                 $pdf->Cell($colTurmaW, $lineH, '', 1,0);
 
                 if ($txt !== '') {
-                    // Limpa quebras/espacos extras e trim
                     $txt = preg_replace('/[ \t]+\n/', "\n", trim($txt));
                     $txt = preg_replace("/\n{2,}/", "\n", $txt);
 
-                    // Altura de linha reduzida para juntar linhas (experimente 3.5 se quiser ainda mais junto)
-                    $cellLineH = max(3.0, ($lineH / 2) - 1.0);
+                    // imprime centralizado e reduzindo fonte
+                    drawFittedCenteredText($pdf, $xCel, $yCel, $colTurmaW, $lineH, $txt, $cellFontMax, $cellFontMin);
 
-                    // Posiciona com menor padding vertical
-                    $pdf->SetXY($xCel + 1, $yCel + 0.8);
-                    $pdf->MultiCell($colTurmaW - 2, $cellLineH, safeToIso($txt), 0, 'C');
+                    // volta cursor pra próxima célula
                     $pdf->SetXY($xCel + $colTurmaW, $yCel);
                 }
-
             }
+
             $pdf->Ln($lineH);
             $pdf->SetX($xDia + $colDiaW);
         }
+
         $pdf->Ln(2);
     }
 }
 
+/* -----------------------------
+   Render Dias (sem cabeçalho)
+------------------------------*/
 function desenharDiasSemCabecalho(
     FPDF $pdf,
     array $turmas,
     array $dias,
     array $horariosMap,
     int $maxAulas,
-    array $siglaVertical
+    array $siglaVertical,
+    float $lineH,
+    int $cellFontMax,
+    int $cellFontMin
 ) {
-    // Layout (mesmo cálculo)
     $leftMargin   = 10;
     $rightMargin  = 10;
     $usableWidth  = $pdf->GetPageWidth() - ($leftMargin + $rightMargin);
@@ -354,85 +471,99 @@ function desenharDiasSemCabecalho(
     $colTurmaW    = $rest / $numTurmas;
 
     $pdf->Ln(2);
-    $pdf->SetFont('Arial','',8);
-    $lineH = 9;
 
     foreach ($dias as $diaSigla) {
         $verticalText = $siglaVertical[$diaSigla] ?? $diaSigla;
         $heightDia    = $maxAulas * $lineH;
-        $xDia         = $pdf->GetX();
-        $yDia         = $pdf->GetY();
+
+        $xDia = $pdf->GetX();
+        $yDia = $pdf->GetY();
 
         $pdf->Rect($xDia, $yDia, $colDiaW, $heightDia);
 
         $numLines  = count(explode("\n",$verticalText));
         $textTotal = $numLines * 3.5;
         $startY    = $yDia + ($heightDia/2) - ($textTotal/2);
+
         $pdf->SetXY($xDia, $startY);
+        $pdf->SetFont('Arial','',8); // escolha o tamanho que você quer para TODOS os dias
+
         $pdf->MultiCell($colDiaW, 3.5, safeToIso($verticalText), 0,'C');
 
         $pdf->SetXY($xDia + $colDiaW, $yDia);
 
         for ($a=1; $a<=$maxAulas; $a++) {
+            $pdf->SetFont('Arial','',7);
             $labelAula = $a.'ª Aula';
             $pdf->Cell($colAulaW, $lineH, safeToIso($labelAula), 1,0,'C');
 
             foreach ($turmas as $tm) {
-                $tID  = (int)$tm['id_turma'];
-                $txt  = $horariosMap[$tID][$diaSigla][$a] ?? '';
+                $tID = (int)$tm['id_turma'];
+                $txt = $horariosMap[$tID][$diaSigla][$a] ?? '';
+
                 $xCel = $pdf->GetX();
                 $yCel = $pdf->GetY();
+
                 $pdf->Cell($colTurmaW, $lineH, '', 1,0);
 
                 if ($txt !== '') {
-                    // Limpa quebras/espacos extras e trim
                     $txt = preg_replace('/[ \t]+\n/', "\n", trim($txt));
                     $txt = preg_replace("/\n{2,}/", "\n", $txt);
 
-                    // Altura de linha reduzida para juntar linhas
-                    $cellLineH = max(3.0, ($lineH / 2) - 1.0);
+                    drawFittedCenteredText($pdf, $xCel, $yCel, $colTurmaW, $lineH, $txt, $cellFontMax, $cellFontMin);
 
-                    // Posiciona com menor padding vertical
-                    $pdf->SetXY($xCel + 1, $yCel + 0.8);
-                    $pdf->MultiCell($colTurmaW - 2, $cellLineH, safeToIso($txt), 0, 'C');
                     $pdf->SetXY($xCel + $colTurmaW, $yCel);
                 }
-
             }
+
             $pdf->Ln($lineH);
             $pdf->SetX($xDia + $colDiaW);
         }
+
         $pdf->Ln(2);
     }
 }
 
 /* -----------------------------
-   Função principal: carregar dados e gerar PDF
+   Carrega dados e gera PDF
 ------------------------------*/
-function gerarHorariosUnidos(PDO $pdo, PDFHorariosUnidos $pdf, int $idAno, int $idNiv, int $idTurno, int $LOGO_SIZE_MM, int $LOGO_GAP_MM)
-{
+function gerarHorariosUnidos(
+    PDO $pdo,
+    PDFHorariosUnidos $pdf,
+    int $idAno,
+    int $idNiv,
+    int $idTurno,
+    int $LOGO_SIZE_MM,
+    int $LOGO_GAP_MM,
+    float $lineH,
+    int $cellFontMax,
+    int $cellFontMin
+) {
     global $diaParaSigla, $siglaVertical;
 
     // instituição
     $stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
     $inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
+
     $nomeInst = $inst['nome_instituicao'] ?? '';
-    $logoPath = (!empty($inst['imagem_instituicao'])) ? LOGO_PATH . '/' . basename($inst['imagem_instituicao']) : null;
+    $logoPath = (!empty($inst['imagem_instituicao'])) ? (LOGO_PATH . '/' . basename($inst['imagem_instituicao'])) : null;
     $logoRaw  = $inst['imagem_instituicao'] ?? null;
 
     // nomes
     $nomeNivel = '';
     if ($idNiv > 0) {
         $stN = $pdo->prepare("SELECT nome_nivel_ensino FROM nivel_ensino WHERE id_nivel_ensino = :id LIMIT 1");
-        $stN->execute([':id' => $idNiv]); // corrigido para $idNiv
+        $stN->execute([':id' => $idNiv]);
         $nomeNivel = $stN->fetchColumn() ?: '';
     }
+
     $nomeTurno = '';
     if ($idTurno > 0) {
         $stT = $pdo->prepare("SELECT nome_turno FROM turno WHERE id_turno = :id LIMIT 1");
         $stT->execute([':id' => $idTurno]);
         $nomeTurno = $stT->fetchColumn() ?: '';
     }
+
     $stA = $pdo->prepare("SELECT ano FROM ano_letivo WHERE id_ano_letivo = :id LIMIT 1");
     $stA->execute([':id' => $idAno]);
     $anoLetivo = $stA->fetchColumn() ?: '';
@@ -445,27 +576,29 @@ function gerarHorariosUnidos(PDO $pdo, PDFHorariosUnidos $pdf, int $idAno, int $
          WHERE t.id_ano_letivo = ?
     ";
     $params = [$idAno];
+
     if ($idNiv > 0) {
         $sqlTur .= " AND s.id_nivel_ensino = ? ";
         $params[] = $idNiv;
     }
+
     if ($idTurno > 0) {
         $sqlTur .= " AND t.id_turno = ? ";
         $params[] = $idTurno;
     }
+
     $sqlTur .= " ORDER BY s.nome_serie, t.nome_turma";
     $stTur = $pdo->prepare($sqlTur);
     $stTur->execute($params);
     $turmas = $stTur->fetchAll(PDO::FETCH_ASSOC);
 
     if (!$turmas) {
-        // antes: gerava PDF vazio. agora: abort com mensagem padronizada
         $msg = sprintf('Nenhuma turma encontrada para os filtros informados. ano=%d nivel=%d turno=%d', $idAno, $idNiv, $idTurno);
         logSecurity($msg);
         abortClient('Parâmetros inválidos');
     }
 
-    // busca horários em bloco (safe: ids inteiros já validados)
+    // horários (em bloco)
     $arrIds = array_map('intval', array_column($turmas, 'id_turma'));
     $strIds = implode(',', $arrIds);
 
@@ -479,38 +612,54 @@ function gerarHorariosUnidos(PDO $pdo, PDFHorariosUnidos $pdf, int $idAno, int $
           JOIN disciplina d ON h.id_disciplina = d.id_disciplina
           JOIN professor  p ON h.id_professor  = p.id_professor
          WHERE h.id_turma IN ($strIds)
-         ORDER BY 
+         ORDER BY
            FIELD(h.dia_semana,'Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado'),
            h.numero_aula
     ";
     $rowsHor = $pdo->query($sqlHor)->fetchAll(PDO::FETCH_ASSOC);
 
-    // mapeia [id_turma][SIGLA][numero_aula] => texto
+    // mapa e max de aulas
     $horariosMap = [];
+    $maxAulasDia = 0;
+
     foreach ($rowsHor as $r) {
         $tid = (int)$r['id_turma'];
         $diaCompleto = $r['dia_semana'];
+
         if (!isset($diaParaSigla[$diaCompleto])) continue;
+
         $diaSig = $diaParaSigla[$diaCompleto];
         $numAula = (int)$r['numero_aula'];
-        $texto   = $r['nome_disciplina'];
+
+        if ($numAula > $maxAulasDia) $maxAulasDia = $numAula;
+
+        $texto = $r['nome_disciplina'];
         if (!empty($r['prof'])) $texto .= "\n" . $r['prof'];
+
         $horariosMap[$tid][$diaSig][$numAula] = $texto;
     }
 
-    $maxAulasDia = 6;
-    $diasPag1 = ['SEG','TER','QUA','QUI'];
-    $diasPag2 = ['SEX'];
+    if ($maxAulasDia <= 0) $maxAulasDia = 6; // fallback
 
-    // pagina 1
+    // páginas (como você pediu)
+    $diasPag1 = ['SEG','TER','QUA'];
+    $diasPag2 = ['QUI','SEX'];
+
+    // página 1
     $pdf->AddPage('P','A4');
     renderCabecalhoPadrao($pdf, $nomeInst, $logoPath, $anoLetivo, $nomeNivel, $nomeTurno, $LOGO_SIZE_MM, $LOGO_GAP_MM, $logoRaw);
-    desenharTabelaComCabecalho($pdf, $turmas, $diasPag1, $horariosMap, $maxAulasDia, $siglaVertical);
+    desenharTabelaComCabecalho($pdf, $turmas, $diasPag1, $horariosMap, $maxAulasDia, $siglaVertical, $lineH, $cellFontMax, $cellFontMin);
 
-    // pagina 2
+    // página 2
+
     $pdf->AddPage('P','A4');
-    renderCabecalhoPadrao($pdf, $nomeInst, $logoPath, $anoLetivo, $nomeNivel, $nomeTurno, $LOGO_SIZE_MM, $LOGO_GAP_MM, $logoRaw);
-    desenharDiasSemCabecalho($pdf, $turmas, $diasPag2, $horariosMap, $maxAulasDia, $siglaVertical);
+
+    // sem logo e sem a linha "Ano Letivo..."
+    $pdf->SetY(12);
+
+    // aqui chamamos A MESMA função com cabeçalho
+    desenharTabelaComCabecalho( $pdf, $turmas, $diasPag2, $horariosMap, $maxAulasDia, $siglaVertical, $lineH, $cellFontMax, $cellFontMin );
+
 }
 
 /* -----------------------------
@@ -519,7 +668,20 @@ function gerarHorariosUnidos(PDO $pdo, PDFHorariosUnidos $pdf, int $idAno, int $
 $pdf = new PDFHorariosUnidos('P','mm','A4');
 $pdf->SetTitle('Horários Unificados', true);
 
-gerarHorariosUnidos($pdo, $pdf, $id_ano_letivo, $id_nivel_ensino, $id_turno, $LOGO_SIZE_MM, $LOGO_GAP_MM);
+global $DEFAULT_LINE_H, $CELL_FONT_MAX, $CELL_FONT_MIN;
+
+gerarHorariosUnidos(
+    $pdo,
+    $pdf,
+    $id_ano_letivo,
+    $id_nivel_ensino,
+    $id_turno,
+    $LOGO_SIZE_MM,
+    $LOGO_GAP_MM,
+    $DEFAULT_LINE_H,
+    $CELL_FONT_MAX,
+    $CELL_FONT_MIN
+);
 
 $pdf->Output('I','HorariosUnidos.pdf');
 exit;

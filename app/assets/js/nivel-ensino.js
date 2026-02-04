@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	const saveBtn = document.getElementById('save-btn');
 	
 	// Modal de exclusão
-	const modalDelete = document.getElementById('modal-delete-serie'); // Ajuste se houver um modal exclusivo para nível
+	const modalDelete = document.getElementById('modal-delete'); 
 	const closeDeleteModalBtn = document.getElementById('close-delete-modal');
 	const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
 	const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
@@ -443,4 +443,4 @@ document.addEventListener('DOMContentLoaded', function() {
 	}
 	init();
 	});
-	
+	 

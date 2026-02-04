@@ -135,35 +135,46 @@ include_once APP_SERVER_PATH . '/models/header.php';
 	</div>
 </div>
 
-<!-- MODAL: VINCULAR DIAS (turno_dias) -->
+<!-- MODAL: VINCULAR DIAS (turno_dias_nivel) -->
 <div id="modal-turno-dias" class="modal">
 	<div class="modal-content">
 		<div class="modal-header">
 			<h2>Vincular Dias</h2>
 			<span class="close-modal" id="close-turno-dias-modal">&times;</span>
 		</div>
+
 		<div class="modal-body">
-			<!-- Nome do Turno (read-only) -->
-			<div class="form-group">
-				<label for="nome-turno-dias">Nome do Turno</label>
-				<input type="text" id="nome-turno-dias" readonly>
-				<!-- hidden com o ID do turno -->
-				<input type="hidden" id="select-turno-dias">
+
+			<!-- Turno + Nível (duas colunas) -->
+			<div class="form-row" style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+				<div class="form-group">
+					<label for="nome-turno-dias">Turno</label>
+					<input type="text" id="nome-turno-dias" readonly>
+					<input type="hidden" id="select-turno-dias">
+				</div>
+
+				<div class="form-group">
+					<label for="select-nivel-turno-dias">Nível de ensino *</label>
+					<select id="select-nivel-turno-dias" disabled>
+						<option value="">Carregando...</option>
+					</select>
+				</div>
 			</div>
 
-			<!-- Tabela para 7 dias da semana e 7 inputs (2 dígitos) -->
+			<!-- Hint de origem (global x nível) -->
+			<div id="turno-dias-source-hint" style="display:none; margin:8px 0; font-size:12px;"></div>
+
 			<div class="form-group">
 				<label>Dias da Semana *</label>
-				<div class="turno-dias-grid">
-					<!-- Será preenchido via JS -->
-				</div>
-			</div>	
-			<em>* Campos obrigatórios.</em>
+				<div class="turno-dias-grid"></div>
+			</div>
 
+			<em>* Campos obrigatórios.</em>
 		</div>
+
 		<div class="modal-footer">
-			<button id="save-turno-dias-btn">Salvar</button>
-			<button id="cancel-turno-dias-btn">Cancelar</button>
+			<button type="button" id="save-turno-dias-btn">Salvar</button>
+			<button type="button" id="cancel-turno-dias-btn">Cancelar</button>
 		</div>
 	</div>
 </div>

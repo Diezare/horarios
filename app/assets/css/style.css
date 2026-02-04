@@ -1145,13 +1145,14 @@ label[for="selectProfessor"], label[for="selectDetalhe"] {
 #cancel-btn, #btn-cancelar ,#cancel-delete-btn, #cancel-professor-disciplina-btn, 
 #cancel-professor-restricoes-btn,#cancel-professor-turno-btn, #cancelSalaBtn,
 #cancel-professor-disciplina-turma-btn, #cancel-turno-dias-btn, #cancelSalaTurnoBtn,
-#cancel-serie-disciplina-btn, #btnCancelarIntervalos, #cancelRestoreBtn,
+#cancel-serie-disciplina-btn, #btnCancelarIntervalos, #cancelRestoreBtn, 
 #btn-cancelar-share-professor, #btnCancelarAutomatico, #btnCancelar, #btn-cancel-vinculo-prof,
 #btnCancelarImpressao, #cancel-usuario-nivel-btn, #btn-cancelar-geral, #btnCancelarTreino,
 #btn-cancelar-turno, #btn-cancelar-turno-geral, #btn-cancelar-turma-geral, #btnCancelarFixacao,
 #btn-cancelar-serie-geral, #btn-cancelar-nivel-geral, #btn-cancelar-geral-disc,
 #btn-cancelar-sala-geral, #cancel-delete-sala-btn, #btn-cancelar-sala, #btn-cancel-dias,
-#btn-cancelar-print, #btn-cancelar-replicar, #btnCancelarUnir, #btn-cancelar-imprimir-treino {
+#btn-cancelar-print, #btn-cancelar-replicar, #btnCancelarUnir, #btn-cancelar-imprimir-treino,
+#cancel-delete-turma-btn {
 	background-color: #c3c3c3;
 	color: var(--dark);
 	font-size: 16px;
@@ -1170,7 +1171,7 @@ label[for="selectProfessor"], label[for="selectDetalhe"] {
 	font-size: 16px;
 }
 
-#close-btn,	#confirm-delete-btn {
+#close-btn,	#confirm-delete-btn, #confirm-delete-turma-btn {
 	background-color: var(--red);
 	color: var(--light);
 	font-size: 16px;

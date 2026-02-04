@@ -80,8 +80,10 @@ document.addEventListener('DOMContentLoaded', function () {
   // Mapas
   let turmasMap = {};            // id_turma -> info
   let turmaTurnoLookup = {};     // id_turma -> id_turno (para completar turnos em horários do ano)
+  let turmaInfoLookup = {};      // id_turma -> { id_turno, id_serie, nome_turma, id_ano_letivo }
   let profDiscTurmaMap = {};     // id_turma -> id_disciplina -> [id_professor]
   let professorRestricoesMap = {}; // id_professor -> id_turno -> dia -> [aulas]
+
 
   // Horários do ano (filtrado por turno selecionado)
   let allHorariosDoAno = [];
@@ -129,6 +131,9 @@ document.addEventListener('DOMContentLoaded', function () {
     extraClassMapping = {};
     usedDisciplineCount = {};
     disciplineWeeklyLimit = {};
+
+      // ✅ ADICIONE ISTO
+    turmaInfoLookup = {};
 
     if (gradeContainer) gradeContainer.innerHTML = '';
     if (quadroDisciplinas) quadroDisciplinas.innerHTML = '';
@@ -353,6 +358,8 @@ if (selectTurno) {
     selectTurma.disabled = true;
     turmasMap = {};
     turmaTurnoLookup = {};
+    // ✅ ADICIONE ISTO
+    turmaInfoLookup = {};
 
     if (!idAno || !idNivel || !idTurno) return;
 
@@ -655,7 +662,9 @@ if (btnAutomatico) {
     recalcularUsosDasDisciplinas();
   }
 
-  async function loadAllHorariosDoAno(idAno) {
+ //carrega todos os horarios e sendo calculado só com os horários carregados do turno atual
+
+  /*async function loadAllHorariosDoAno(idAno) {
     try {
       const resp = await fetchJson(`/horarios/app/controllers/horarios/listHorariosByAnoLetivo.php?id_ano_letivo=${encodeURIComponent(idAno)}`);
       if (resp.status === 'success' && Array.isArray(resp.data)) {
@@ -676,7 +685,33 @@ if (btnAutomatico) {
       console.error('Erro loadAllHorariosDoAno:', err);
       allHorariosDoAno = [];
     }
+  }*/
+
+  async function loadAllHorariosDoAno(idAno) {
+  try {
+    const resp = await fetchJson(
+      `/horarios/app/controllers/horarios/listHorariosByAnoLetivo.php?id_ano_letivo=${encodeURIComponent(idAno)}`
+    );
+
+    if (resp.status === 'success' && Array.isArray(resp.data)) {
+      // ✅ NÃO filtra por turno aqui
+      // Mantém tudo do ano (todos os turnos), para:
+      // - contagem global por turma (matutino + vespertino)
+      // - conflitos de professor (professorOcupado já filtra por turno)
+      allHorariosDoAno = resp.data.map(h => {
+        const idTurma = String(h.id_turma);
+        const turnoDaTurma = turmaTurnoLookup[idTurma] || null;
+        return { ...h, id_turno: h.id_turno ?? turnoDaTurma };
+      });
+    } else {
+      allHorariosDoAno = [];
+    }
+  } catch (err) {
+    console.error('Erro loadAllHorariosDoAno:', err);
+    allHorariosDoAno = [];
   }
+}
+  
 
   async function loadProfessorRestricoes(idAno) {
     professorRestricoesMap = {};
@@ -773,8 +808,7 @@ async function loadHorariosTurma(idTurma) {
   }
 }
 
-
-
+/*
   async function loadTurmaTurnoLookup(idAno, idNivel) {
     turmaTurnoLookup = {};
     if (!idAno || !idNivel) return;
@@ -790,7 +824,45 @@ async function loadHorariosTurma(idTurma) {
     } catch (e) {
       console.warn('Falha loadTurmaTurnoLookup:', e);
     }
+  }*/
+
+async function loadTurmaTurnoLookup(idAno, idNivel) {
+  turmaTurnoLookup = {};
+  turmaInfoLookup = {};
+  if (!idAno || !idNivel) return;
+
+  try {
+    // Requer que o PHP aceite sem id_turno
+    const resp = await fetchJson(
+      `/horarios/app/controllers/turma/listTurmaByUserAndAno.php` +
+      `?id_ano_letivo=${encodeURIComponent(idAno)}` +
+      `&id_nivel_ensino=${encodeURIComponent(idNivel)}`
+    );
+
+    if (resp.status !== 'success') return;
+
+    (resp.data || []).forEach(t => {
+      const idTurma = String(t.id_turma);
+      const idTurno = String(t.id_turno || '');
+      const idSerie = String(t.id_serie || '');
+      const nomeTurma = String(t.nome_turma || '');
+      const anoLetivo = String(t.id_ano_letivo || idAno);
+
+      turmaTurnoLookup[idTurma] = idTurno;
+
+      // ✅ info para “agrupar” a turma entre turnos
+      turmaInfoLookup[idTurma] = {
+        id_turno: idTurno,
+        id_serie: idSerie,
+        nome_turma: nomeTurma,
+        id_ano_letivo: anoLetivo
+      };
+    });
+  } catch (e) {
+    console.warn('Falha loadTurmaTurnoLookup:', e);
   }
+}
+
 
   // =============================================
   // LIMITES / USO POR DISCIPLINA
@@ -804,7 +876,7 @@ async function loadHorariosTurma(idTurma) {
     });
   }
 
-  function recalcularUsosDasDisciplinas() {
+  /*function recalcularUsosDasDisciplinas() {
     usedDisciplineCount = {};
     if (!dadosTurma || !Array.isArray(dadosTurma.horarios)) return;
 
@@ -813,7 +885,52 @@ async function loadHorariosTurma(idTurma) {
       if (!did) return;
       usedDisciplineCount[did] = (usedDisciplineCount[did] || 0) + 1;
     });
-  }
+  }*/
+
+function recalcularUsosDasDisciplinas() {
+  usedDisciplineCount = {};
+
+  const anoId = String(idAnoSelecionado || '');
+  const turmaIdAtual = String(idTurmaSelecionada || '');
+  if (!anoId || !turmaIdAtual) return;
+  if (!Array.isArray(allHorariosDoAno)) return;
+
+  // ✅ chave “lógica” da turma: mesma série + mesmo nome + mesmo ano
+  const infoAtual =
+    turmaInfoLookup[turmaIdAtual] ||
+    turmasMap[turmaIdAtual] || null;
+
+  const chaveAtual = infoAtual
+    ? `${String(infoAtual.id_ano_letivo || anoId)}|${String(infoAtual.id_serie || '')}|${String(infoAtual.nome_turma || '')}`
+    : null;
+
+  allHorariosDoAno.forEach(h => {
+    // garante ano
+    const hAno = String(h.id_ano_letivo || anoId || '');
+    if (hAno !== anoId) return;
+
+    // compara turma por “grupo”
+    const hTurmaId = String(h.id_turma || '');
+    const infoH = turmaInfoLookup[hTurmaId] || turmasMap[hTurmaId] || null;
+
+    const chaveH = infoH
+      ? `${String(infoH.id_ano_letivo || hAno)}|${String(infoH.id_serie || '')}|${String(infoH.nome_turma || '')}`
+      : null;
+
+    // se não conseguir formar chave, cai para id_turma (só para não quebrar)
+    const mesmaTurmaLogica = chaveAtual && chaveH
+      ? (chaveH === chaveAtual)
+      : (hTurmaId === turmaIdAtual);
+
+    if (!mesmaTurmaLogica) return;
+
+    const did = String(h.id_disciplina || '');
+    if (!did) return;
+
+    usedDisciplineCount[did] = (usedDisciplineCount[did] || 0) + 1;
+  });
+}
+
 
   // ✅ CORREÇÃO: valida saldo ignorando a disciplina já presente no slot atual
   function checarSaldoDisciplina(discId, diaSemana = null, numeroAula = null) {

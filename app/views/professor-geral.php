@@ -34,17 +34,110 @@ function abortClient($msg = 'Parâmetros inválidos') {
 }
 
 /* -----------------------------
-   VALIDAÇÃO RÍGIDA DA QUERY STRING (CABEÇALHO)
-   Permitimos só os parâmetros conhecidos e validamos tipos/valores.
+   Helpers
 ------------------------------*/
-$allowed = [
-    'id_ano',
-    'disciplina','restricoes','turnos','turmas','horarios'
-];
+function enc($s) { return iconv('UTF-8','ISO-8859-1//TRANSLIT',(string)$s); }
+
+/**
+ * Normaliza dia_semana vindo do banco (Terca/Terça, Sabado/Sábado etc.)
+ * Retorna SEMPRE com acento para bater com o layout do relatório.
+ */
+function normalizeDia(string $dia): string {
+    $d = trim($dia);
+
+    // remove duplicidade de espaços
+    $d = preg_replace('/\s+/', ' ', $d);
+
+    // normalização de variantes comuns sem acento
+    $map = [
+        'Terca'  => 'Terça',
+        'Sabado' => 'Sábado',
+        'Domingo'=> 'Domingo',
+        'Segunda'=> 'Segunda',
+        'Terça'  => 'Terça',
+        'Quarta' => 'Quarta',
+        'Quinta' => 'Quinta',
+        'Sexta'  => 'Sexta',
+        'Sábado' => 'Sábado',
+    ];
+
+    // tenta match direto
+    if (isset($map[$d])) return $map[$d];
+
+    // tenta match case-insensitive
+    foreach ($map as $k => $v) {
+        if (mb_strtolower($d, 'UTF-8') === mb_strtolower($k, 'UTF-8')) return $v;
+    }
+
+    // fallback: devolve como veio
+    return $d;
+}
+
+/**
+ * Faz o cabeçalho (logo + instituição) centralizado e o título do relatório.
+ */
+function renderHeader(\FPDF $pdf, string $nomeInst, ?string $logoPath, int $LOGO_SIZE_MM, int $LOGO_GAP_MM, string $titulo): void {
+    $topY = 12;
+    $pdf->SetY($topY);
+    $pdf->SetFont('Arial','B',14);
+
+    $text  = enc($nomeInst);
+    $textW = $nomeInst ? $pdf->GetStringWidth($text) : 0;
+
+    $hasLogo = ($logoPath && file_exists($logoPath));
+    $totalW = $hasLogo ? ($LOGO_SIZE_MM + ($nomeInst ? $LOGO_GAP_MM : 0) + $textW) : $textW;
+
+    $pageW  = $pdf->GetPageWidth();
+    $startX = ($pageW - $totalW) / 2;
+    $y      = $pdf->GetY();
+
+    if ($hasLogo) {
+        // segurança: basename + realpath dentro LOGO_PATH
+        $candidate   = basename($logoPath);
+        $fullLogo    = LOGO_PATH . '/' . $candidate;
+        $realLogo    = (file_exists($fullLogo) && is_file($fullLogo)) ? realpath($fullLogo) : false;
+        $realLogoDir = realpath(LOGO_PATH);
+
+        if ($realLogo && $realLogoDir && strpos($realLogo, $realLogoDir) === 0) {
+            $pdf->Image($realLogo, $startX, $y - 2, $LOGO_SIZE_MM, $LOGO_SIZE_MM);
+            $startX += $LOGO_SIZE_MM + ($nomeInst ? $LOGO_GAP_MM : 0);
+        } else {
+            logSecurity("Logo inválido/falso caminho: " . ($logoPath ?? ''));
+        }
+    }
+
+    if ($nomeInst) {
+        $pdf->SetXY($startX, $y);
+        $pdf->Cell($textW, $LOGO_SIZE_MM, $text, 0, 1, 'L');
+    }
+
+    $pdf->Ln(3);
+    $pdf->SetFont('Arial','B',13);
+    $pdf->Cell(0, 7, enc($titulo), 0, 1, 'L');
+    $pdf->Ln(1);
+}
+
+/**
+ * Se necessário, força quebra de página antes de uma seção.
+ */
+function ensureSpaceOrNewPage(\FPDF $pdf, float $minSpaceMm, callable $onNewPage = null): void {
+    $bottomMargin = 15; // mesmo do footer
+    $pageH = $pdf->GetPageHeight();
+    $y = $pdf->GetY();
+    $spaceLeft = $pageH - $bottomMargin - $y;
+    if ($spaceLeft < $minSpaceMm) {
+        $pdf->AddPage();
+        if ($onNewPage) $onNewPage();
+    }
+}
+
+/* -----------------------------
+   VALIDAÇÃO RÍGIDA DA QUERY STRING (CABEÇALHO)
+------------------------------*/
+$allowed = ['id_ano','disciplina','restricoes','turnos','turmas','horarios'];
 $rawQuery = $_SERVER['QUERY_STRING'] ?? '';
 parse_str($rawQuery, $receivedParams);
 
-// rejeita parâmetros inesperados
 $receivedKeys = array_keys($receivedParams);
 $extra = array_diff($receivedKeys, $allowed);
 if (!empty($extra)) {
@@ -52,7 +145,6 @@ if (!empty($extra)) {
     abortClient();
 }
 
-// normalize & validate
 $canonical = [];
 foreach ($receivedParams as $k => $v) {
     if (!is_scalar($v)) {
@@ -60,10 +152,8 @@ foreach ($receivedParams as $k => $v) {
         abortClient();
     }
 
-    // flags (checkboxes) must be either empty (present without value) or accepted truthy strings
     if (in_array($k, ['disciplina','restricoes','turnos','turmas','horarios'], true)) {
         $val = (string)$v;
-        // Acceptable values for checkbox-like params: empty, '1', 'on', 'true'
         $okValues = ['', '1', 'on', 'true'];
         if ($val !== '' && !in_array(strtolower($val), $okValues, true)) {
             logSecurity("Valor inválido para flag {$k} em professor-geral.php raw=" . var_export($v, true));
@@ -73,7 +163,6 @@ foreach ($receivedParams as $k => $v) {
         continue;
     }
 
-    // numeric params must be non-negative integers
     if (!preg_match('/^\d+$/', (string)$v)) {
         logSecurity("Parâmetro não numérico permitido em professor-geral.php: {$k} raw=" . var_export($v, true) . " | raw_qs={$rawQuery}");
         abortClient();
@@ -86,7 +175,6 @@ foreach ($receivedParams as $k => $v) {
     $canonical[$k] = $ival;
 }
 
-// Defensive canonical ordering check
 ksort($canonical);
 $normalized_received_array = [];
 foreach ($receivedParams as $k => $v) {
@@ -123,129 +211,89 @@ $exibeTurmas   = !empty($canonical['turmas']);
 $exibeHorarios = !empty($canonical['horarios']);
 
 /* -----------------------------
-   Mantive suas constantes visuais
+   Constantes visuais
 ------------------------------*/
-$LOGO_SIZE_MM = 15; // tamanho (largura=altura) da logo em mm
-$LOGO_GAP_MM  = 5;  // espaço entre a logo e o nome em mm
+$LOGO_SIZE_MM = 15;
+$LOGO_GAP_MM  = 5;
 
 // ----------------------------------------------------------------
-// 2) Classe PDF – mesmo rodapé padronizado
+// Classe PDF
 // ----------------------------------------------------------------
 class PDFGeral extends FPDF {
     public function Footer() {
         $this->SetY(-15);
         $this->SetFont('Arial','I',8);
-        // Esquerda: Página X (sem "/N")
-        $this->Cell(0,10,iconv('UTF-8','ISO-8859-1','Página ' . $this->PageNo()),0,0,'L');
-        // Direita: Data/hora
-        $this->Cell(0,10,iconv('UTF-8','ISO-8859-1','Impresso em: ' . date('d/m/Y H:i:s')),0,0,'R');
+        $this->Cell(0,10,enc('Página ' . $this->PageNo()),0,0,'L');
+        $this->Cell(0,10,enc('Impresso em: ' . date('d/m/Y H:i:s')),0,0,'R');
     }
 }
 
 // ----------------------------------------------------------------
-// 3) Consulta todos os professores (mesma lógica)
+// Carrega instituição
+// ----------------------------------------------------------------
+$stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
+$inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
+$nomeInst = $inst ? ($inst['nome_instituicao'] ?? '') : '';
+$logoPath = ($inst && !empty($inst['imagem_instituicao']))
+    ? (LOGO_PATH . '/' . basename($inst['imagem_instituicao']))
+    : null;
+
+// ----------------------------------------------------------------
+// Carrega professores
 // ----------------------------------------------------------------
 $stmt = $pdo->query("SELECT * FROM professor ORDER BY nome_completo");
 $professores = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $pdf = new PDFGeral('P','mm','A4');
-$pdf->SetTitle(iconv('UTF-8','ISO-8859-1','Relatório Geral de Professores'));
+$pdf->SetTitle(enc('Relatório Geral de Professores'));
 
-// Dados da instituição (para usar em todas as páginas)
-$stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
-$inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
-$nomeInst = $inst ? ($inst['nome_instituicao'] ?? '') : '';
-$logoPathRaw = ($inst && !empty($inst['imagem_instituicao'])) ? $inst['imagem_instituicao'] : null;
-
-// safe logo path (basename + realpath check will be applied later)
-$logoPath = $logoPathRaw ? LOGO_PATH . '/' . basename($logoPathRaw) : null;
-
-// se não houver professores, emite PDF vazio rápido
+// sem professores
 if (!$professores) {
     $pdf->AddPage();
+    renderHeader($pdf, $nomeInst, $logoPath, $LOGO_SIZE_MM, $LOGO_GAP_MM, 'Relatório Geral de Professores');
     $pdf->SetFont('Arial','B',12);
-    $pdf->Cell(0,10, iconv('UTF-8','ISO-8859-1','Nenhum professor cadastrado.'), 0,1,'C');
+    $pdf->Cell(0,10, enc('Nenhum professor cadastrado.'), 0,1,'C');
     $pdf->Output();
     exit;
 }
 
+// dias do relatório (padrão)
+$diasUteis = ['Segunda','Terça','Quarta','Quinta','Sexta'];
+
 foreach ($professores as $prof) {
-    // Nova página por professor
+    $id_professor = (int)($prof['id_professor'] ?? 0);
+    if ($id_professor <= 0) continue;
+
+    // Página base do professor
     $pdf->AddPage();
-
-    // ---------------- Cabeçalho (logo + nome na mesma linha, centralizados)
-    $topY = 12;
-    $pdf->SetY($topY);
-    $pdf->SetFont('Arial','B',14); // tamanho do nome da instituição
-
-    $text  = iconv('UTF-8','ISO-8859-1', $nomeInst);
-    $textW = $pdf->GetStringWidth($text);
-
-    // calcula largura total do bloco (logo + gap + texto)
-    if ($logoPath && file_exists($logoPath)) {
-        $totalW = $LOGO_SIZE_MM + ($nomeInst ? $LOGO_GAP_MM : 0) + $textW;
-    } else {
-        $totalW = $textW;
-    }
-    $pageW  = $pdf->GetPageWidth();
-    $startX = ($pageW - $totalW) / 2;
-    $y      = $pdf->GetY();
-
-    // logo seguro: basename + realpath dentro LOGO_PATH
-    if ($logoPath && file_exists($logoPath)) {
-        $candidate = basename($logoPath);
-        $fullLogo = LOGO_PATH . '/' . $candidate;
-        if (file_exists($fullLogo) && is_file($fullLogo)) {
-            $realLogo = realpath($fullLogo);
-            $realLogoDir = realpath(LOGO_PATH);
-            if ($realLogo !== false && $realLogoDir !== false && strpos($realLogo, $realLogoDir) === 0) {
-                $pdf->Image($realLogo, $startX, $y - 2, $LOGO_SIZE_MM, $LOGO_SIZE_MM);
-                $startX += $LOGO_SIZE_MM + ($nomeInst ? $LOGO_GAP_MM : 0);
-            } else {
-                logSecurity("Tentativa de usar logo fora do diretório permitido: " . ($logoPathRaw ?? ''));
-            }
-        } else {
-            logSecurity("Logo informado não encontrado: " . ($logoPathRaw ?? ''));
-        }
-    }
-
-    // nome da instituição
-    if ($nomeInst) {
-        $pdf->SetXY($startX, $y);
-        $pdf->Cell($textW, $LOGO_SIZE_MM, $text, 0, 1, 'L');
-    }
-
-    // Título do relatório — menor para economizar espaço
-    $pdf->Ln(3);
-    $pdf->SetFont('Arial','B',13);
-    $pdf->Cell(0, 7, iconv('UTF-8','ISO-8859-1','Relatório Geral de Professores'), 0, 1, 'L');
-    $pdf->Ln(1);
+    renderHeader($pdf, $nomeInst, $logoPath, $LOGO_SIZE_MM, $LOGO_GAP_MM, 'Relatório Geral de Professores');
 
     // ----------------------------------------------------------------
-    // 4) Dados do Professor – Tabela (fontes menores p/ caber 1 página)
+    // Dados do Professor
     // ----------------------------------------------------------------
     $pdf->SetFont('Arial','B',10);
     $pdf->SetFillColor(200,200,200);
-    $pdf->Cell(80, 8, iconv('UTF-8','ISO-8859-1','Nome Completo'), 1, 0, 'C', true);
-    $pdf->Cell(35, 8, iconv('UTF-8','ISO-8859-1','Nome Exibição'), 1, 0, 'C', true);
-    $pdf->Cell(45, 8, iconv('UTF-8','ISO-8859-1','Telefone'),      1, 0, 'C', true);
-    $pdf->Cell(30, 8, iconv('UTF-8','ISO-8859-1','Sexo'),          1, 1, 'C', true);
+    $pdf->Cell(80, 8, enc('Nome Completo'), 1, 0, 'C', true);
+    $pdf->Cell(35, 8, enc('Nome Exibição'), 1, 0, 'C', true);
+    $pdf->Cell(45, 8, enc('Telefone'),      1, 0, 'C', true);
+    $pdf->Cell(30, 8, enc('Sexo'),          1, 1, 'C', true);
 
     $pdf->SetFont('Arial','',10);
-    $pdf->Cell(80, 8, iconv('UTF-8','ISO-8859-1', $prof['nome_completo'] ?? ''), 1, 0, 'C');
-    $pdf->Cell(35, 8, iconv('UTF-8','ISO-8859-1', $prof['nome_exibicao'] ?? ''), 1, 0, 'C');
-    $pdf->Cell(45, 8, iconv('UTF-8','ISO-8859-1', $prof['telefone'] ?? ''),      1, 0, 'C');
-    $pdf->Cell(30, 8, iconv('UTF-8','ISO-8859-1', $prof['sexo'] ?? ''),          1, 1, 'C');
+    $pdf->Cell(80, 8, enc($prof['nome_completo'] ?? ''), 1, 0, 'C');
+    $pdf->Cell(35, 8, enc($prof['nome_exibicao'] ?? ''), 1, 0, 'C');
+    $pdf->Cell(45, 8, enc($prof['telefone'] ?? ''),      1, 0, 'C');
+    $pdf->Cell(30, 8, enc($prof['sexo'] ?? ''),          1, 1, 'C');
 
-    $id_professor = (int)$prof['id_professor'];
-
-    // Margens verticais mais enxutas entre seções
     $gapSection = 6;
 
     // ----------------------------------------------------------------
-    // 5) Restrições (se marcado e se existir $id_ano)
+    // Restrições (normalizando dia para não "sumir" terça/terca etc.)
     // ----------------------------------------------------------------
     if ($exibeRestr && $id_ano) {
+        ensureSpaceOrNewPage($pdf, 60, function() use ($pdf,$nomeInst,$logoPath,$LOGO_SIZE_MM,$LOGO_GAP_MM){
+            renderHeader($pdf, $nomeInst, $logoPath, $LOGO_SIZE_MM, $LOGO_GAP_MM, 'Relatório Geral de Professores');
+        });
+
         $stmtRes = $pdo->prepare("
             SELECT dia_semana, numero_aula
               FROM professor_restricoes
@@ -257,28 +305,32 @@ foreach ($professores as $prof) {
 
         $restricoesMap = [];
         foreach ($restricoesData as $r) {
-            $dia = $r['dia_semana'];
+            $dia = normalizeDia((string)$r['dia_semana']);
             if (!isset($restricoesMap[$dia])) $restricoesMap[$dia] = [];
             $restricoesMap[$dia][] = (int)$r['numero_aula'];
+        }
+        // remove duplicadas
+        foreach ($restricoesMap as $d => $arr) {
+            $restricoesMap[$d] = array_values(array_unique($arr));
+            sort($restricoesMap[$d]);
         }
 
         $pdf->Ln($gapSection);
         $pdf->SetFont('Arial','B',12);
-        $pdf->Cell(0,7, iconv('UTF-8','ISO-8859-1','Restrições está marcado em vermelho'),0,1,'L');
+        $pdf->Cell(0,7, enc('Restrições (X = restrito)'),0,1,'L');
 
         $pdf->SetFont('Arial','B',9);
         $pdf->SetFillColor(200,200,200);
-        $pdf->Cell(30, 7, iconv('UTF-8','ISO-8859-1','Aula/Dia'), 1, 0, 'C', true);
-        $diasUteis = ['Segunda','Terça','Quarta','Quinta','Sexta'];
+        $pdf->Cell(30, 7, enc('Aula/Dia'), 1, 0, 'C', true);
         foreach ($diasUteis as $dia) {
-            $pdf->Cell(32,7, iconv('UTF-8','ISO-8859-1',$dia), 1, 0, 'C', true);
+            $pdf->Cell(32,7, enc($dia), 1, 0, 'C', true);
         }
         $pdf->Ln();
 
         $pdf->SetFont('Arial','',9);
         $maxAulas = 6;
         for ($aula = 1; $aula <= $maxAulas; $aula++) {
-            $pdf->Cell(30, 7, $aula.iconv('UTF-8','ISO-8859-1','ª Aula'), 1, 0, 'C');
+            $pdf->Cell(30, 7, $aula.enc('ª Aula'), 1, 0, 'C');
             foreach ($diasUteis as $dia) {
                 if (isset($restricoesMap[$dia]) && in_array($aula, $restricoesMap[$dia], true)) {
                     $pdf->SetFillColor(255,0,0);
@@ -297,26 +349,30 @@ foreach ($professores as $prof) {
     }
 
     // ----------------------------------------------------------------
-    // 6) Turmas (se marcado e se existir $id_ano)
+    // Turmas (corrigido: remove duplicadas com DISTINCT e evita duplicação por múltiplas disciplinas)
     // ----------------------------------------------------------------
     if ($exibeTurmas && $id_ano) {
+        ensureSpaceOrNewPage($pdf, 40, function() use ($pdf,$nomeInst,$logoPath,$LOGO_SIZE_MM,$LOGO_GAP_MM){
+            renderHeader($pdf, $nomeInst, $logoPath, $LOGO_SIZE_MM, $LOGO_GAP_MM, 'Relatório Geral de Professores');
+        });
+
         $pdf->Ln($gapSection);
         $pdf->SetFont('Arial','B',12);
-        $pdf->Cell(0,7, iconv('UTF-8','ISO-8859-1','Turmas'), 0, 1, 'L');
+        $pdf->Cell(0,7, enc('Turmas'), 0, 1, 'L');
 
         $stmtTurmasInfo = $pdo->prepare("
             SELECT a.ano,
                    n.nome_nivel_ensino,
                    s.nome_serie,
-                   GROUP_CONCAT(t.nome_turma ORDER BY t.nome_turma SEPARATOR ', ') AS turmas
-              FROM turma t
-              JOIN ano_letivo a ON t.id_ano_letivo = a.id_ano_letivo
-              JOIN serie s ON t.id_serie = s.id_serie
+                   GROUP_CONCAT(DISTINCT t.nome_turma ORDER BY t.nome_turma SEPARATOR ', ') AS turmas
+              FROM professor_disciplinas_turmas pdt
+              JOIN turma t        ON pdt.id_turma = t.id_turma
+              JOIN ano_letivo a   ON t.id_ano_letivo = a.id_ano_letivo
+              JOIN serie s        ON t.id_serie = s.id_serie
               JOIN nivel_ensino n ON s.id_nivel_ensino = n.id_nivel_ensino
-              JOIN professor_disciplinas_turmas pdt ON t.id_turma = pdt.id_turma
              WHERE pdt.id_professor = :id
-               AND a.id_ano_letivo = :id_ano
-             GROUP BY s.id_serie
+               AND a.id_ano_letivo  = :id_ano
+             GROUP BY a.ano, n.nome_nivel_ensino, s.id_serie, s.nome_serie
              ORDER BY a.ano, n.nome_nivel_ensino, s.nome_serie
         ");
         $stmtTurmasInfo->execute([':id'=>$id_professor, ':id_ano'=>$id_ano]);
@@ -335,15 +391,15 @@ foreach ($professores as $prof) {
                 }
                 $agrupado[$key]['series'][] = [
                     'nome_serie' => $r['nome_serie'],
-                    'turmas'     => $r['turmas']
+                    'turmas'     => $r['turmas'] ?: '-'
                 ];
             }
 
             $pdf->SetFont('Arial','B',9);
             $pdf->SetFillColor(200,200,200);
-            $pdf->Cell(30,7,'Ano',1,0,'C',true);
-            $pdf->Cell(60,7,iconv('UTF-8','ISO-8859-1','Nível de Ensino'),1,0,'C',true);
-            $pdf->Cell(100,7,iconv('UTF-8','ISO-8859-1','Séries e Turmas'),1,1,'C',true);
+            $pdf->Cell(30,7,enc('Ano'),1,0,'C',true);
+            $pdf->Cell(60,7,enc('Nível de Ensino'),1,0,'C',true);
+            $pdf->Cell(100,7,enc('Séries e Turmas'),1,1,'C',true);
 
             $pdf->SetFont('Arial','',9);
             foreach ($agrupado as $group) {
@@ -353,36 +409,39 @@ foreach ($professores as $prof) {
 
                 $stText = '';
                 foreach ($series as $serieData) {
-                    $stText .= iconv('UTF-8','ISO-8859-1',$serieData['nome_serie'])
-                              .' - '
-                              .iconv('UTF-8','ISO-8859-1',$serieData['turmas']) . "\n";
+                    $stText .= enc($serieData['nome_serie']).' - '.enc($serieData['turmas'])."\n";
                 }
                 $stText = rtrim($stText,"\n");
-                $lineCount = substr_count($stText,"\n") + 1;
-                $rowHeight = 6 * $lineCount; // linha mais compacta
 
-                $pdf->Cell(30,$rowHeight,iconv('UTF-8','ISO-8859-1',$ano),1,0,'C');
-                $pdf->Cell(60,$rowHeight,iconv('UTF-8','ISO-8859-1',$nivel),1,0,'C');
-                $x = $pdf->GetX();
-                $y = $pdf->GetY();
+                $lineCount = substr_count($stText,"\n") + 1;
+                $rowHeight = 6 * $lineCount;
+
+                $pdf->Cell(30,$rowHeight,enc($ano),1,0,'C');
+                $pdf->Cell(60,$rowHeight,enc($nivel),1,0,'C');
                 $pdf->MultiCell(100,6,$stText,1,'C');
             }
         } else {
             $pdf->SetFont('Arial','I',10);
-            $pdf->Cell(0,8,'Nenhuma turma encontrada para o ano selecionado.',0,1,'C');
+            $pdf->Cell(0,8, enc('Nenhuma turma encontrada para o ano selecionado.'),0,1,'C');
         }
     }
 
     // ----------------------------------------------------------------
-    // 7) Disciplinas (se marcado e se existir $id_ano)
+    // Disciplinas (corrigido: DISTINCT + dedupe de turmas por série)
     // ----------------------------------------------------------------
     if ($exibeDisc && $id_ano) {
+        ensureSpaceOrNewPage($pdf, 40, function() use ($pdf,$nomeInst,$logoPath,$LOGO_SIZE_MM,$LOGO_GAP_MM){
+            renderHeader($pdf, $nomeInst, $logoPath, $LOGO_SIZE_MM, $LOGO_GAP_MM, 'Relatório Geral de Professores');
+        });
+
         $pdf->Ln($gapSection);
         $pdf->SetFont('Arial','B',12);
-        $pdf->Cell(0,7,iconv('UTF-8','ISO-8859-1','Disciplinas'),0,1,'L');
+        $pdf->Cell(0,7,enc('Disciplinas'),0,1,'L');
 
+        // OBS: não precisa do join professor_disciplinas para listar; pdt já tem vínculo
         $stmtDisciplina = $pdo->prepare("
-            SELECT a.ano,
+            SELECT DISTINCT
+                   a.ano,
                    n.nome_nivel_ensino,
                    s.nome_serie,
                    t.nome_turma,
@@ -392,13 +451,10 @@ foreach ($professores as $prof) {
               JOIN serie s        ON t.id_serie = s.id_serie
               JOIN ano_letivo a   ON t.id_ano_letivo = a.id_ano_letivo
               JOIN nivel_ensino n ON s.id_nivel_ensino = n.id_nivel_ensino
-              JOIN professor_disciplinas pd 
-                   ON pdt.id_professor = pd.id_professor 
-                  AND pd.id_disciplina = pdt.id_disciplina
-              JOIN disciplina d   ON pd.id_disciplina = d.id_disciplina
+              JOIN disciplina d   ON pdt.id_disciplina = d.id_disciplina
              WHERE pdt.id_professor = :id
-               AND a.id_ano_letivo = :id_ano
-             ORDER BY a.ano, n.nome_nivel_ensino, s.nome_serie, t.nome_turma, d.nome_disciplina
+               AND a.id_ano_letivo  = :id_ano
+             ORDER BY a.ano, n.nome_nivel_ensino, d.nome_disciplina, s.nome_serie, t.nome_turma
         ");
         $stmtDisciplina->execute([':id'=>$id_professor, ':id_ano'=>$id_ano]);
         $discRows = $stmtDisciplina->fetchAll(PDO::FETCH_ASSOC);
@@ -423,10 +479,10 @@ foreach ($professores as $prof) {
         if ($agrupado) {
             $pdf->SetFont('Arial','B',9);
             $pdf->SetFillColor(200,200,200);
-            $pdf->Cell(30,7,'Ano',1,0,'C',true);
-            $pdf->Cell(50,7,iconv('UTF-8','ISO-8859-1','Nível de Ensino'),1,0,'C',true);
-            $pdf->Cell(60,7,iconv('UTF-8','ISO-8859-1','Série e Turmas'),1,0,'C',true);
-            $pdf->Cell(50,7,iconv('UTF-8','ISO-8859-1','Disciplina'),1,1,'C',true);
+            $pdf->Cell(30,7,enc('Ano'),1,0,'C',true);
+            $pdf->Cell(50,7,enc('Nível de Ensino'),1,0,'C',true);
+            $pdf->Cell(60,7,enc('Série e Turmas'),1,0,'C',true);
+            $pdf->Cell(50,7,enc('Disciplina'),1,1,'C',true);
 
             $pdf->SetFont('Arial','',9);
             foreach ($agrupado as $grp) {
@@ -435,50 +491,63 @@ foreach ($professores as $prof) {
                 $disciplina = $grp['disciplina'];
                 $listaST    = $grp['seriesTurmas'];
 
-                // Agrupa turmas por série
                 $serieTurmaMap = [];
                 foreach ($listaST as $st) {
-                    $nome_serie = $st['serie'];
-                    if (!isset($serieTurmaMap[$nome_serie])) $serieTurmaMap[$nome_serie] = [];
-                    $serieTurmaMap[$nome_serie][] = $st['turma'];
+                    $serie = (string)$st['serie'];
+                    if (!isset($serieTurmaMap[$serie])) $serieTurmaMap[$serie] = [];
+                    $serieTurmaMap[$serie][] = (string)$st['turma'];
+                }
+                // remove duplicadas e ordena
+                foreach ($serieTurmaMap as $serie => $arrT) {
+                    $arrT = array_values(array_unique($arrT));
+                    sort($arrT, SORT_NATURAL);
+                    $serieTurmaMap[$serie] = $arrT;
                 }
 
                 $stText = '';
                 foreach ($serieTurmaMap as $serie => $arrT) {
-                    $stText .= iconv('UTF-8','ISO-8859-1',$serie) . ' ' . implode(', ', $arrT) . "\n";
+                    $stText .= enc($serie).' '.enc(implode(', ', $arrT))."\n";
                 }
                 $stText = rtrim($stText,"\n");
                 $lineCount  = substr_count($stText,"\n") + 1;
-                $cellHeight = 6 * $lineCount; // compacto
+                $cellHeight = 6 * $lineCount;
 
                 $x = $pdf->GetX();
                 $y = $pdf->GetY();
-                $pdf->Cell(30,$cellHeight, iconv('UTF-8','ISO-8859-1',$ano),   1, 0, 'C');
-                $pdf->Cell(50,$cellHeight, iconv('UTF-8','ISO-8859-1',$nivel), 1, 0, 'C');
-                $pdf->SetXY($x+30+50,$y);
+
+                $pdf->Cell(30,$cellHeight, enc($ano),   1, 0, 'C');
+                $pdf->Cell(50,$cellHeight, enc($nivel), 1, 0, 'C');
+
+                $pdf->SetXY($x+30+50, $y);
                 $pdf->MultiCell(60,6,$stText,1,'C');
-                $pdf->SetXY($x+30+50+60,$y);
-                $pdf->Cell(50,$cellHeight, iconv('UTF-8','ISO-8859-1',$disciplina), 1, 1, 'C');
+
+                $pdf->SetXY($x+30+50+60, $y);
+                $pdf->Cell(50,$cellHeight, enc($disciplina), 1, 1, 'C');
             }
         } else {
             $pdf->SetFont('Arial','I',10);
-            $pdf->Cell(0,8,'Nenhuma disciplina encontrada.',0,1,'C');
+            $pdf->Cell(0,8, enc('Nenhuma disciplina encontrada.'),0,1,'C');
         }
     }
 
     // ----------------------------------------------------------------
-    // 8) Turnos (se marcado)
+    // Turnos
     // ----------------------------------------------------------------
     if ($exibeTurnos) {
+        ensureSpaceOrNewPage($pdf, 25, function() use ($pdf,$nomeInst,$logoPath,$LOGO_SIZE_MM,$LOGO_GAP_MM){
+            renderHeader($pdf, $nomeInst, $logoPath, $LOGO_SIZE_MM, $LOGO_GAP_MM, 'Relatório Geral de Professores');
+        });
+
         $pdf->Ln($gapSection);
         $pdf->SetFont('Arial','B',12);
-        $pdf->Cell(0,7,iconv('UTF-8','ISO-8859-1','Turnos'),0,1,'L');
+        $pdf->Cell(0,7,enc('Turnos'),0,1,'L');
 
         $stmtTurnos = $pdo->prepare("
-            SELECT t.nome_turno
+            SELECT DISTINCT t.nome_turno
               FROM professor_turnos pt
               JOIN turno t ON pt.id_turno = t.id_turno
              WHERE pt.id_professor = :id
+             ORDER BY t.nome_turno
         ");
         $stmtTurnos->execute([':id'=>$id_professor]);
         $turnosList = $stmtTurnos->fetchAll(PDO::FETCH_ASSOC);
@@ -491,53 +560,58 @@ foreach ($professores as $prof) {
             $pdf->SetFont('Arial','',10);
 
             foreach ($turnosList as $t) {
-                $pdf->Cell($cellWidth, $cellHeight, iconv('UTF-8','ISO-8859-1',$t['nome_turno'] ?? ''), 1, 0, 'C');
+                $pdf->Cell($cellWidth, $cellHeight, enc($t['nome_turno'] ?? ''), 1, 0, 'C');
             }
             $pdf->Ln();
         } else {
             $pdf->SetFont('Arial','I',10);
-            $pdf->Cell(0,8,'Nenhum turno vinculado.',1,1,'C');
+            $pdf->Cell(0,8, enc('Nenhum turno vinculado.'),1,1,'C');
         }
     }
 
     // ----------------------------------------------------------------
-    // 9) Horários (se marcado e se existir $id_ano)
+    // Horários
+    //   CORREÇÃO 1: Sempre começa em NOVA PÁGINA (para não ficar “quebrado” como no print).
+    //   CORREÇÃO 2: Normaliza dia_semana para preencher corretamente a coluna Terça.
     // ----------------------------------------------------------------
     if ($exibeHorarios && $id_ano) {
+        // SEMPRE nova página para a grade do ano letivo (conforme seu pedido)
+        $pdf->AddPage();
+        renderHeader($pdf, $nomeInst, $logoPath, $LOGO_SIZE_MM, $LOGO_GAP_MM, 'Relatório Geral de Professores');
+
         // Ano letivo
         $stmtAno = $pdo->prepare("SELECT ano FROM ano_letivo WHERE id_ano_letivo = :id_ano LIMIT 1");
         $stmtAno->execute([':id_ano'=>$id_ano]);
         $anoLetivoRow = $stmtAno->fetch(PDO::FETCH_ASSOC);
-        $anoLetivo = $anoLetivoRow ? $anoLetivoRow['ano'] : '';
+        $anoLetivo = $anoLetivoRow ? ($anoLetivoRow['ano'] ?? '') : '';
 
         // Horários
         $stmtHorarios = $pdo->prepare("
-            SELECT 
+            SELECT DISTINCT
                 h.dia_semana,
                 h.numero_aula,
                 s.nome_serie,
                 t.nome_turma,
                 d.nome_disciplina
             FROM horario h
-            JOIN turma t ON h.id_turma = t.id_turma
-            JOIN serie s ON t.id_serie = s.id_serie
-            JOIN disciplina d ON h.id_disciplina = d.id_disciplina
-            JOIN ano_letivo a ON t.id_ano_letivo = a.id_ano_letivo
+            JOIN turma t        ON h.id_turma = t.id_turma
+            JOIN serie s        ON t.id_serie = s.id_serie
+            JOIN disciplina d   ON h.id_disciplina = d.id_disciplina
+            JOIN ano_letivo a   ON t.id_ano_letivo = a.id_ano_letivo
             WHERE h.id_professor = :idprof
               AND a.id_ano_letivo = :idano
-            ORDER BY 
-              FIELD(h.dia_semana,'Segunda','Terça','Quarta','Quinta','Sexta','Sabado','Domingo'),
-              h.numero_aula
+            ORDER BY
+              h.numero_aula,
+              FIELD(h.dia_semana,'Segunda','Terca','Terça','Quarta','Quinta','Sexta','Sabado','Sábado','Domingo')
         ");
         $stmtHorarios->execute([':idprof'=>$id_professor, ':idano'=>$id_ano]);
         $horariosData = $stmtHorarios->fetchAll(PDO::FETCH_ASSOC);
 
-        if (count($horariosData) === 0) {
-            $pdf->Ln($gapSection);
+        if (!$horariosData) {
             $pdf->SetFont('Arial','B',12);
-            $pdf->Cell(190, 8, iconv('UTF-8','ISO-8859-1','Nenhuma aula foi encontrada'), 1, 1, 'C');
+            $pdf->Cell(190, 8, enc('Nenhuma aula foi encontrada'), 1, 1, 'C');
         } else {
-            $dias = ['Segunda','Terça','Quarta','Quinta','Sexta'];
+            $dias = $diasUteis; // Segunda..Sexta
             $maxAulas = 6;
 
             $matrix = [];
@@ -546,46 +620,53 @@ foreach ($professores as $prof) {
             }
 
             foreach ($horariosData as $rowH) {
-                $dia        = $rowH['dia_semana'];
-                $aula       = (int)$rowH['numero_aula'];
-                $serieTurma = $rowH['nome_serie'].' '.$rowH['nome_turma'];
-                $disciplina = $rowH['nome_disciplina'];
-                $text = iconv('UTF-8','ISO-8859-1',$serieTurma."\n".$disciplina);
-                if (isset($matrix[$aula][$dia])) {
-                    $matrix[$aula][$dia] = $matrix[$aula][$dia]
-                        ? ($matrix[$aula][$dia]."\n-----------\n".$text)
-                        : $text;
+                $dia  = normalizeDia((string)$rowH['dia_semana']);
+                $aula = (int)$rowH['numero_aula'];
+
+                if (!isset($matrix[$aula][$dia])) continue;
+
+                $serieTurma = (string)$rowH['nome_serie'].' '.(string)$rowH['nome_turma'];
+                $disciplina = (string)$rowH['nome_disciplina'];
+
+                $text = enc($serieTurma."\n".$disciplina);
+
+                // evita duplicar o mesmo bloco no mesmo slot
+                if ($matrix[$aula][$dia] !== "" && strpos($matrix[$aula][$dia], $text) !== false) {
+                    continue;
                 }
+
+                $matrix[$aula][$dia] = $matrix[$aula][$dia]
+                    ? ($matrix[$aula][$dia]."\n-----------\n".$text)
+                    : $text;
             }
 
-            $pdf->Ln($gapSection);
+            $pdf->Ln(2);
             $pdf->SetFont('Arial','B',12);
-            $tituloAno = $anoLetivo ? "Ano Letivo de ".$anoLetivo : "Horários";
-            $pdf->Cell(190,8,iconv('UTF-8','ISO-8859-1',$tituloAno),1,1,'C');
+            $tituloAno = $anoLetivo ? ("Ano Letivo de ".$anoLetivo) : "Horários";
+            $pdf->Cell(190,8,enc($tituloAno),1,1,'C');
 
             // Cabeçalho
             $pdf->SetFont('Arial','B',9);
-            $pdf->Cell(30,6,iconv('UTF-8','ISO-8859-1','Aula/Dia'),1,0,'C',true);
+            $pdf->SetFillColor(200,200,200);
+            $pdf->Cell(30,6,enc('Aula/Dia'),1,0,'C',true);
             foreach ($dias as $dia) {
-                $pdf->Cell(32,6,iconv('UTF-8','ISO-8859-1',$dia),1,0,'C',true);
+                $pdf->Cell(32,6,enc($dia),1,0,'C',true);
             }
             $pdf->Ln();
 
             // Conteúdo compacto
             $pdf->SetFont('Arial','',8);
             for ($aula = 1; $aula <= $maxAulas; $aula++) {
-                // calcula altura da linha
-                $maxRowHeight = 6; // altura mínima
+                $maxRowHeight = 6;
                 foreach ($dias as $dia) {
-                    $lines  = substr_count($matrix[$aula][$dia], "\n") + 1;
-                    $height = 4.5 * $lines; // linha mais compacta
+                    $cellTxt = $matrix[$aula][$dia];
+                    $lines  = ($cellTxt === "") ? 1 : (substr_count($cellTxt, "\n") + 1);
+                    $height = 4.5 * $lines;
                     if ($height > $maxRowHeight) $maxRowHeight = $height;
                 }
 
-                // 1ª coluna
-                $pdf->Cell(30, $maxRowHeight, $aula.iconv('UTF-8','ISO-8859-1','ª Aula'),1,0,'C');
+                $pdf->Cell(30, $maxRowHeight, $aula.enc('ª Aula'),1,0,'C');
 
-                // Demais colunas
                 foreach ($dias as $dia) {
                     $conteudo = $matrix[$aula][$dia];
                     if ($conteudo === "") {
@@ -600,14 +681,14 @@ foreach ($professores as $prof) {
                     }
                 }
                 $pdf->Ln($maxRowHeight);
-                $pdf->Ln(2); // espacinho entre linhas
+                $pdf->Ln(2);
             }
         }
     }
 }
 
 // ----------------------------------------------------------------
-// 10) Finaliza e envia ao browser
+// Finaliza e envia ao browser
 // ----------------------------------------------------------------
 $pdf->Output();
 exit;

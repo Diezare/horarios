@@ -4,12 +4,12 @@ require_once __DIR__ . '/../../../configs/init.php';
 header('Content-Type: application/json');
 
 /*
- Esperamos:
+ Espera:
   - POST id_turno
-  - POST dias => JSON string com array de objetos, ex:
+  - POST id_nivel_ensino
+  - POST dias => JSON string:
     [
       { "dia_semana": "Domingo", "aulas_no_dia": 3 },
-      { "dia_semana": "Segunda", "aulas_no_dia": 5 },
       ...
     ]
 */
@@ -19,56 +19,53 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 	exit;
 }
 
-$id_turno = intval($_POST['id_turno'] ?? 0);
+$id_turno = (int)($_POST['id_turno'] ?? 0);
+$id_nivel_ensino = (int)($_POST['id_nivel_ensino'] ?? 0);
 $diasJson = $_POST['dias'] ?? '';
 
-if ($id_turno <= 0 || empty($diasJson)) {
-	echo json_encode(['status'=>'error','message'=>'Dados incompletos.']);
+if ($id_turno <= 0 || $id_nivel_ensino <= 0 || $diasJson === '') {
+	echo json_encode(['status'=>'error','message'=>'Dados incompletos (turno, nível e dias).']);
 	exit;
 }
 
 $diasArr = json_decode($diasJson, true);
 if (!is_array($diasArr)) {
-	echo json_encode(['status'=>'error','message'=>'Formato de dados (JSON) inválido.']);
+	echo json_encode(['status'=>'error','message'=>'Formato (JSON) inválido.']);
 	exit;
 }
+
+$validos = ["Domingo","Segunda","Terca","Quarta","Quinta","Sexta","Sabado"];
 
 try {
 	$pdo->beginTransaction();
 
-	// Remove todos os registros atuais
-	$stmtDel = $pdo->prepare("DELETE FROM turno_dias WHERE id_turno = ?");
-	$stmtDel->execute([$id_turno]);
+	// Remove todos os registros atuais desse turno + nível
+	$stmtDel = $pdo->prepare("DELETE FROM turno_dias_nivel WHERE id_turno = ? AND id_nivel_ensino = ?");
+	$stmtDel->execute([$id_turno, $id_nivel_ensino]);
 
 	// Reinsere
 	$stmtIns = $pdo->prepare("
-		INSERT INTO turno_dias (id_turno, dia_semana, aulas_no_dia)
-		VALUES (?, ?, ?)
+		INSERT INTO turno_dias_nivel (id_turno, id_nivel_ensino, dia_semana, aulas_no_dia)
+		VALUES (?, ?, ?, ?)
 	");
 
-	$validos = ["Domingo","Segunda","Terca","Quarta","Quinta","Sexta","Sabado"];
-
 	foreach ($diasArr as $item) {
-		$dia_semana   = $item['dia_semana']   ?? '';
-		$aulas_no_dia = intval($item['aulas_no_dia'] ?? 0);
+		$dia_semana   = $item['dia_semana'] ?? '';
+		$aulas_no_dia = (int)($item['aulas_no_dia'] ?? 0);
 
-		if (!in_array($dia_semana, $validos)) {
-			continue; // ignora se o dia for inválido
-		}
+		if (!in_array($dia_semana, $validos, true)) continue;
+
 		if ($aulas_no_dia < 0)  $aulas_no_dia = 0;
 		if ($aulas_no_dia > 99) $aulas_no_dia = 99;
 
-		$stmtIns->execute([$id_turno, $dia_semana, $aulas_no_dia]);
+		$stmtIns->execute([$id_turno, $id_nivel_ensino, $dia_semana, $aulas_no_dia]);
 	}
 
 	$pdo->commit();
-	echo json_encode(['status'=>'success','message'=>'Dias do turno atualizados com sucesso!']);
+	echo json_encode(['status'=>'success','message'=>'Dias do turno (por nível) atualizados com sucesso!']);
 
 } catch (PDOException $e) {
 	$pdo->rollBack();
-	echo json_encode([
-		'status'=>'error',
-		'message'=>'Erro ao atualizar dias do turno: '.$e->getMessage()
-	]);
+	echo json_encode(['status'=>'error','message'=>'Erro ao atualizar: '.$e->getMessage()]);
 }
 ?>

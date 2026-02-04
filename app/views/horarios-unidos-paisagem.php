@@ -411,7 +411,15 @@ function gerarHorariosUnidos(PDO $pdo, PDFHorariosUnidos $pdf, int $idAno, int $
         $horariosMap[$tid][$diaSig][$numAula] = $texto;
     }
 
-    $maxAulasDia = 6;
+    //$maxAulasDia = 6;
+    // Descobre o maior numero_aula existente nos horários retornados (não corta 7ª/8ª etc.)
+    $maxAulasDia = 0;
+    foreach ($rowsHor as $r) {
+        $na = (int)$r['numero_aula'];
+        if ($na > $maxAulasDia) $maxAulasDia = $na;
+    }
+    if ($maxAulasDia <= 0) $maxAulasDia = 6; // fallback
+
     $diasExibir = ['SEG','TER','QUA','QUI','SEX'];
 
     // vertical names per turma
