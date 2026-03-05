@@ -14,7 +14,6 @@ function seg_log(string $msg, array $meta = []) {
 
 /**
  * Verifica se registro existe na tabela (campo = value).
- * Retorna true se existe, false caso contrário.
  */
 function exists_record(PDO $pdo, string $table, string $field, $value): bool {
     if (!$value) return false;
@@ -29,7 +28,6 @@ $id_ano_letivo   = isset($_GET['id_ano_letivo'])   ? (int)$_GET['id_ano_letivo']
 $id_nivel_ensino = isset($_GET['id_nivel_ensino']) ? (int)$_GET['id_nivel_ensino'] : 0;
 $id_turno        = isset($_GET['id_turno'])        ? (int)$_GET['id_turno']        : 0;
 
-/* Se faltar qualquer obrigatório: exibe página com "Parâmetros inválidos" e sai (sem gerar PDF) */
 if (!$id_ano_letivo || !$id_nivel_ensino || !$id_turno) {
     seg_log('Tentativa de gerar horarios-treino sem parâmetros obrigatórios', [
         'id_ano_letivo'=>$id_ano_letivo,
@@ -45,12 +43,12 @@ if (!$id_ano_letivo || !$id_nivel_ensino || !$id_turno) {
     exit;
 }
 
-/* ---------------- 2) Parâmetros GET opcionais (filtros) ---------------- */
+/* ---------------- 2) Parâmetros GET opcionais ---------------- */
 $filterModalidade = isset($_GET['modalidade']) ? (int)$_GET['modalidade'] : 0;
 $filterCategoria  = isset($_GET['categoria'])  ? (int)$_GET['categoria']  : 0;
 $filterProfessor  = isset($_GET['professor'])  ? (int)$_GET['professor']  : 0;
 
-/* ---------------- 3) Valida filtros opcionais: se não existirem, ignora e loga ---------------- */
+/* ---------------- 3) Validar filtros ---------------- */
 $invalidFilters = [];
 if ($filterModalidade && !exists_record($pdo, 'modalidade', 'id_modalidade', $filterModalidade)) {
     $invalidFilters['modalidade'] = $filterModalidade;
@@ -74,7 +72,7 @@ if (!empty($invalidFilters)) {
     ]);
 }
 
-/* ---------------- 4) Consulta os horários aplicando filtros válidos ---------------- */
+/* ---------------- 4) Consulta ---------------- */
 try {
     $where = "
         he.id_ano_letivo = :ano
@@ -135,14 +133,13 @@ try {
     exit;
 }
 
-/* ---------------- 5) Descobrir nome do turno e ano para cabeçalho (preencher mesmo sem rows) ---------------- */
+/* ---------------- 5) Cabeçalho (ano/turno) ---------------- */
 $nomeTurno = '';
 $anoLetivo = '';
 if (!empty($rows)) {
     $nomeTurno = $rows[0]['nome_turno'] ?? '';
     $anoLetivo = $rows[0]['ano'] ?? '';
 } else {
-    // preencher via BD (caso filtros válidos mas sem registros)
     $stm = $pdo->prepare("SELECT nome_turno FROM turno WHERE id_turno=? LIMIT 1");
     $stm->execute([$id_turno]);
     if ($r = $stm->fetch(PDO::FETCH_ASSOC)) $nomeTurno = $r['nome_turno'];
@@ -152,7 +149,7 @@ if (!empty($rows)) {
     if ($r = $stm->fetch(PDO::FETCH_ASSOC)) $anoLetivo = $r['ano'];
 }
 
-/* ---------------- 6) Mapeamento vertical dos dias ---------------- */
+/* ---------------- 6) Dias verticais (completos como antes) ---------------- */
 $diaVertical = [
     'Domingo' => "D\nO\nM\nI\nN\nG\nO",
     'Segunda' => "S\nE\nG\nU\nN\nD\nA",
@@ -163,7 +160,7 @@ $diaVertical = [
     'Sabado'  => "S\nA\nB\nA\nD\nO"
 ];
 
-/* ---------------- 7) Se não há registros: mostrar página (sem gerar PDF) ---------------- */
+/* ---------------- 7) Sem registros ---------------- */
 if (empty($rows)) {
     seg_log('Nenhum horário de treino encontrado para os filtros (exibição HTML).', [
         'usuario'=> $_SESSION['id_usuario'] ?? 0,
@@ -182,7 +179,7 @@ if (empty($rows)) {
     exit;
 }
 
-/* ---------------- 8) Layout PDF: cabeçalho/rodapé e geração ---------------- */
+/* ---------------- 8) PDF ---------------- */
 $LOGO_SIZE_MM = 15;
 $LOGO_GAP_MM  = 5;
 
@@ -192,14 +189,21 @@ class PDFHorariosTreino extends FPDF
     {
         global $pdo, $anoLetivo, $nomeTurno, $LOGO_SIZE_MM, $LOGO_GAP_MM;
 
+        // 2ª página em diante: sem logo/nome/título
+        if ($this->PageNo() > 1) {
+            $this->SetY(8);
+            return;
+        }
+
         $stmtInst = $pdo->query("SELECT nome_instituicao, imagem_instituicao FROM instituicao LIMIT 1");
         $inst = $stmtInst->fetch(PDO::FETCH_ASSOC);
 
         $nomeInst = $inst['nome_instituicao'] ?? '';
         $logoPath = (!empty($inst['imagem_instituicao'])) ? LOGO_PATH . '/' . basename($inst['imagem_instituicao']) : null;
 
-        $this->SetY(12);
-        $this->SetFont('Arial','B',14);
+        $this->SetY(10);
+        $this->SetFont('Arial','B',13);
+
         $txt  = mb_convert_encoding($nomeInst, 'ISO-8859-1','UTF-8');
         $txtW = $this->GetStringWidth($txt);
         $hasLogo = ($logoPath && file_exists($logoPath));
@@ -212,118 +216,135 @@ class PDFHorariosTreino extends FPDF
             $this->Image($logoPath, $x, $y-2, $LOGO_SIZE_MM, $LOGO_SIZE_MM);
             $x += $LOGO_SIZE_MM + ($nomeInst ? $LOGO_GAP_MM : 0);
         }
+
         if ($nomeInst) {
             $this->SetXY($x, $y);
             $this->Cell($txtW, $LOGO_SIZE_MM, $txt, 0, 1, 'L');
         }
-        $this->Ln(3);
 
-        $this->SetFont('Arial','B',10);
+        $this->Ln(2);
+        $this->SetFont('Arial','B',9);
         $linha = 'Ano Letivo ' . ($anoLetivo ?: '—') . ' | Horários de Treino ' . trim($nomeTurno ?: '');
-        $this->Cell(0, 7, mb_convert_encoding($linha, 'ISO-8859-1','UTF-8'), 0, 1, 'C');
-        $this->Ln(5);
+        $this->Cell(0, 6, mb_convert_encoding($linha, 'ISO-8859-1','UTF-8'), 0, 1, 'C');
+        $this->Ln(2);
     }
 
     public function Footer()
     {
-        $this->SetY(-15);
-        $this->SetFont('Arial','I',8);
-        $this->Cell(0, 10, mb_convert_encoding('Página '.$this->PageNo(),'ISO-8859-1','UTF-8'), 0, 0, 'L');
-        $this->Cell(0, 10, mb_convert_encoding('Impresso em: '.date('d/m/Y H:i:s'),'ISO-8859-1','UTF-8'), 0, 0, 'R');
+        $this->SetY(-12);
+        $this->SetFont('Arial','I',7);
+        $this->Cell(0, 5, mb_convert_encoding('Página '.$this->PageNo(),'ISO-8859-1','UTF-8'), 0, 0, 'L');
+        $this->Cell(0, 5, mb_convert_encoding('Impresso em: '.date('d/m/Y H:i:s'),'ISO-8859-1','UTF-8'), 0, 0, 'R');
     }
 
     public function checkPageBreak($height)
     {
-        return ($this->GetY() + $height > $this->GetPageHeight() - 20);
+        return ($this->GetY() + $height > $this->GetPageHeight() - 14);
     }
 }
 
-/* Temporary error handler: suprimir notice específico do iconv() no fpdf.php */
-$previousErrorHandler = set_error_handler(function($errno, $errstr, $errfile, $errline) {
+/* Suprime notice específico do iconv() */
+$previousErrorHandler = set_error_handler(function($errno, $errstr) {
     if ($errno === E_NOTICE && strpos($errstr, 'iconv(): Detected an illegal character in input string') !== false) {
-        return true; // suprime especificamente esse notice
+        return true;
     }
     return false;
 });
 
-/* Instancia PDF */
-$pdf = new PDFHorariosTreino('P','mm','A4');
+$pdf = new PDFHorariosTreino('P','mm','A4'); // RETRATO
+$pdf->SetMargins(6, 8, 6);                   // margens menores para aproveitar folha
+$pdf->SetAutoPageBreak(true, 12);
 $pdf->SetTitle(mb_convert_encoding('Horários de Treino','ISO-8859-1','UTF-8'));
 $pdf->AddPage();
-$pdf->SetFont('Arial','',9);
+$pdf->SetFont('Arial','',8.5);
 
-/* Larguras / alturas */
-$colDiaW         = 10;
-$colHorarioW     = 30;
-$colModalidadeW  = 35;
-$colCategoriaW   = 35;
-$colProfessorW   = 80;
-$lineH           = 8;
+/* Colunas em retrato (A4 útil ~198mm com margens 6) */
+$colDiaW       = 10;
+$colHorarioW   = 24;
+$colModCatW    = 82; // Modalidade + Categoria juntas
+$colProfessorW = 82; // Professor
+$lineH         = 7; // compacta
 
-/* Cabeçalho colunas */
-function imprimirCabecalhoColunas($pdf, $colDiaW, $colHorarioW, $colModalidadeW, $colCategoriaW, $colProfessorW, $lineH)
+function imprimirCabecalhoColunas($pdf, $colDiaW, $colHorarioW, $colModCatW, $colProfessorW, $lineH)
 {
-    $pdf->SetFont('Arial','B',9);
+    $pdf->SetFont('Arial','B',8);
     $pdf->SetFillColor(220,220,220);
 
-    $pdf->Cell($colDiaW,        $lineH, mb_convert_encoding('Dia','ISO-8859-1','UTF-8'),               1, 0, 'C', true);
-    $pdf->Cell($colHorarioW,    $lineH, mb_convert_encoding('Horário de Treino','ISO-8859-1','UTF-8'), 1, 0, 'C', true);
-    $pdf->Cell($colModalidadeW, $lineH, mb_convert_encoding('Modalidade','ISO-8859-1','UTF-8'),        1, 0, 'C', true);
-    $pdf->Cell($colCategoriaW,  $lineH, mb_convert_encoding('Categoria','ISO-8859-1','UTF-8'),         1, 0, 'C', true);
-    $pdf->Cell($colProfessorW,  $lineH, mb_convert_encoding('Professor','ISO-8859-1','UTF-8'),         1, 1, 'C', true);
+    $pdf->Cell($colDiaW,       $lineH, mb_convert_encoding('Dia','ISO-8859-1','UTF-8'), 1, 0, 'C', true);
+    $pdf->Cell($colHorarioW,   $lineH, mb_convert_encoding('Horário','ISO-8859-1','UTF-8'), 1, 0, 'C', true);
+    $pdf->Cell($colModCatW,    $lineH, mb_convert_encoding('Modalidade / Categoria','ISO-8859-1','UTF-8'), 1, 0, 'C', true);
+    $pdf->Cell($colProfessorW, $lineH, mb_convert_encoding('Professor','ISO-8859-1','UTF-8'), 1, 1, 'C', true);
 
-    $pdf->SetFont('Arial','',9);
+    $pdf->SetFont('Arial','',8.5);
 }
 
-/* Agrupa por dia e imprime */
+function fitText(FPDF $pdf, string $text, float $maxW): string
+{
+    if ($pdf->GetStringWidth($text) <= $maxW) return $text;
+    $txt = $text;
+    while (mb_strlen($txt, 'UTF-8') > 1 && $pdf->GetStringWidth($txt . '...') > $maxW) {
+        $txt = mb_substr($txt, 0, mb_strlen($txt, 'UTF-8') - 1, 'UTF-8');
+    }
+    return $txt . '...';
+}
+
+/* Agrupa por dia */
 $grupoPorDia = [];
 foreach ($rows as $r) {
     $grupoPorDia[$r['dia_semana']][] = $r;
 }
 
+$espaco_entre_dias = 2;
+
 foreach ($grupoPorDia as $diaSemana => $registrosDia) {
     $numRegDia = count($registrosDia);
-    $boxHeight = ($numRegDia * $lineH) + $lineH;
-    $espaco_entre_dias = 5;
-    $altura_total = $boxHeight + $espaco_entre_dias;
+    $alturaGrupo = $lineH + ($numRegDia * $lineH) + $espaco_entre_dias;
 
-    if ($pdf->checkPageBreak($altura_total)) $pdf->AddPage();
+    if ($pdf->checkPageBreak($alturaGrupo)) {
+        $pdf->AddPage();
+    }
 
-    imprimirCabecalhoColunas($pdf, $colDiaW, $colHorarioW, $colModalidadeW, $colCategoriaW, $colProfessorW, $lineH);
+    imprimirCabecalhoColunas($pdf, $colDiaW, $colHorarioW, $colModCatW, $colProfessorW, $lineH);
 
     $boxHeight = $numRegDia * $lineH;
     $x0 = $pdf->GetX();
     $y0 = $pdf->GetY();
 
+    // Coluna Dia (vertical)
     $pdf->Rect($x0, $y0, $colDiaW, $boxHeight);
 
-    $pdf->SetFont('Arial','',8);
+    $pdf->SetFont('Arial','',7);
     $verticalText = $diaVertical[$diaSemana] ?? $diaSemana;
     $pdf->SetXY($x0, $y0);
 
     $numLines   = count(explode("\n", $verticalText));
-    $textHeight = $numLines * 3.5;
+    $textHeight = $numLines * 3.0;
     $startY     = $y0 + ($boxHeight/2) - ($textHeight/2);
 
     $pdf->SetXY($x0, $startY);
-    $pdf->MultiCell($colDiaW, 3.5, mb_convert_encoding($verticalText,'ISO-8859-1','UTF-8'), 0, 'C');
+    $pdf->MultiCell($colDiaW, 3.0, mb_convert_encoding($verticalText,'ISO-8859-1','UTF-8'), 0, 'C');
 
-    $pdf->SetFont('Arial','',9);
+    // Linhas
+    $pdf->SetFont('Arial','',8.5);
     $pdf->SetXY($x0 + $colDiaW, $y0);
 
     foreach ($registrosDia as $r) {
-        $horaI = substr($r['hora_inicio'],0,5);
-        $horaF = substr($r['hora_fim'],   0,5);
+        $horaI = substr($r['hora_inicio'], 0, 5);
+        $horaF = substr($r['hora_fim'],   0, 5);
         $horario = $horaI.' - '.$horaF;
 
-        $mod  = mb_convert_encoding($r['nome_modalidade'], 'ISO-8859-1','UTF-8');
-        $cat  = mb_convert_encoding($r['nome_categoria'],  'ISO-8859-1','UTF-8');
-        $prof = mb_convert_encoding($r['nome_professor'],  'ISO-8859-1','UTF-8');
+        $modCatRaw = trim(($r['nome_modalidade'] ?? '') . ' ' . ($r['nome_categoria'] ?? ''));
+        $profRaw   = trim($r['nome_professor'] ?? '');
 
-        $pdf->Cell($colHorarioW,    $lineH, $horario, 1, 0, 'C');
-        $pdf->Cell($colModalidadeW, $lineH, $mod,     1, 0, 'C');
-        $pdf->Cell($colCategoriaW,  $lineH, $cat,     1, 0, 'C');
-        $pdf->Cell($colProfessorW,  $lineH, $prof,    1, 1, 'C');
+        $modCatIso = mb_convert_encoding($modCatRaw, 'ISO-8859-1','UTF-8');
+        $profIso   = mb_convert_encoding($profRaw,   'ISO-8859-1','UTF-8');
+
+        $modCat = fitText($pdf, $modCatIso, $colModCatW - 2);
+        $prof   = fitText($pdf, $profIso,   $colProfessorW - 2);
+
+        $pdf->Cell($colHorarioW,   $lineH, mb_convert_encoding($horario, 'ISO-8859-1','UTF-8'), 1, 0, 'C');
+        $pdf->Cell($colModCatW,    $lineH, $modCat, 1, 0, 'L');
+        $pdf->Cell($colProfessorW, $lineH, $prof,   1, 1, 'L');
 
         $pdf->SetX($x0 + $colDiaW);
     }
@@ -331,14 +352,13 @@ foreach ($grupoPorDia as $diaSemana => $registrosDia) {
     $pdf->Ln($espaco_entre_dias);
 }
 
-/* restaura handler */
+/* Restaura handler */
 if ($previousErrorHandler !== null) {
     set_error_handler($previousErrorHandler);
 } else {
     restore_error_handler();
 }
 
-/* Emite PDF */
 $pdf->Output('I','horarios-treino.pdf');
 exit;
 ?>

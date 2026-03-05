@@ -43,14 +43,14 @@ document.addEventListener('DOMContentLoaded', function () {
 	const emailInput = document.getElementById('email_usuario');
 	const senhaInput = document.getElementById('senha_usuario');
 	const confirmaSenhaInput = document.getElementById('confirma_senha');
-	const situacaoInputs = document.getElementsByName('situacao_usuario'); // radios
+	const situacaoInputs = document.getElementsByName('situacao_usuario');
 	const imagemInput = document.getElementById('imagem_usuario');
 	const perfilPreview = document.getElementById('perfil-preview');
 
 	// Select de nível de usuário
 	const nivelUsuarioSelect = document.getElementById('nivel_usuario');
 
-	// Campos do modal de vincular níveis (somente leitura com o nome)
+	// Campos do modal de vincular níveis
 	const usuarioNomeVinculo = document.getElementById('usuario_nome_vinculo');
 
 	// ==============================
@@ -58,19 +58,85 @@ document.addEventListener('DOMContentLoaded', function () {
 	// ==============================
 	let isEditMode = false;
 	let currentEditId = null;
-	let currentDeleteId	= null;
+	let currentDeleteId = null;
 	let imageRemoved = false;
-	let allUsers = [];		 // cache da listagem para ordenar
-	let selectedUserId = null;	 // para impressão individual
+	let allUsers = [];
+	let selectedUserId = null;
 
 	// ==============================
-	// HELPERS DE MODAL
+	// HELPERS
+	// ==============================
+	function normalizeImagePath(rawPath) {
+		if (!rawPath) return '';
+
+		let p = String(rawPath).trim();
+
+		// Se vier URL completa antiga, remove host
+		p = p.replace(/^https?:\/\/[^/]+/i, '');
+
+		// Remove duplicações conhecidas
+		p = p.replace(
+			'/horarios/app/assets/imgs/perfil/app/assets/imgs/perfil/',
+			'/horarios/app/assets/imgs/perfil/'
+		);
+		p = p.replace(
+			'/app/assets/imgs/perfil/app/assets/imgs/perfil/',
+			'/app/assets/imgs/perfil/'
+		);
+
+		// Garante barra inicial
+		if (p && !p.startsWith('/')) p = '/' + p;
+
+		// Se vier sem /horarios, adiciona
+		if (p.startsWith('/app/assets/')) {
+			p = '/horarios' + p;
+		}
+
+		return p;
+	}
+
+	function toAbsoluteUrl(pathOrUrl) {
+		if (!pathOrUrl) return '';
+		if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+		return window.location.origin + pathOrUrl;
+	}
+
+	function renderPerfilPreview(imageUrl, isLocalPreview = false) {
+		if (!perfilPreview) return;
+
+		perfilPreview.innerHTML = `
+			<div style="position: relative; display: inline-block;">
+				<img src="${imageUrl}" alt="Imagem de Perfil" style="width:120px; height:120px; object-fit: contain;">
+				<button id="${isLocalPreview ? 'delete-preview-btn' : 'delete-foto-btn'}"
+					style="position: absolute; top: 0; right: 0; background: red; color:#fff; border:none;
+					cursor:pointer; width:22px; height:22px; border-radius:2px; font-size:15px; font-weight:bold;">X</button>
+			</div>
+		`;
+
+		const btnId = isLocalPreview ? 'delete-preview-btn' : 'delete-foto-btn';
+		const delBtn = document.getElementById(btnId);
+
+		if (delBtn) {
+			delBtn.addEventListener('click', () => {
+				perfilPreview.innerHTML = '';
+				if (isLocalPreview && imagemInput) {
+					imagemInput.value = '';
+				} else {
+					imageRemoved = true;
+				}
+			});
+		}
+	}
+
+	// ==============================
+	// MODAIS
 	// ==============================
 	function openModal() {
 		if (!modal) return;
 		modal.style.display = 'block';
 		modal.classList.remove('fade-out');
 		modal.classList.add('fade-in');
+
 		const content = modal.querySelector('.modal-content');
 		if (content) {
 			content.classList.remove('slide-up');
@@ -80,17 +146,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
 	function closeModal() {
 		if (!modal) return;
+
 		const content = modal.querySelector('.modal-content');
 		if (content) {
 			content.classList.remove('slide-down');
 			content.classList.add('slide-up');
 		}
+
 		modal.classList.remove('fade-in');
 		modal.classList.add('fade-out');
+
 		setTimeout(() => {
 			modal.style.display = 'none';
 			if (content) content.classList.remove('slide-up');
 			modal.classList.remove('fade-out');
+
 			isEditMode = false;
 			currentEditId = null;
 			imageRemoved = false;
@@ -103,6 +173,7 @@ document.addEventListener('DOMContentLoaded', function () {
 		modalElem.style.display = 'block';
 		modalElem.classList.remove('fade-out');
 		modalElem.classList.add('fade-in');
+
 		const content = modalElem.querySelector('.modal-content');
 		if (content) {
 			content.classList.remove('slide-up');
@@ -112,13 +183,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
 	function closeGenericModal(modalElem) {
 		if (!modalElem) return;
+
 		const content = modalElem.querySelector('.modal-content');
 		if (content) {
 			content.classList.remove('slide-down');
 			content.classList.add('slide-up');
 		}
+
 		modalElem.classList.remove('fade-in');
 		modalElem.classList.add('fade-out');
+
 		setTimeout(() => {
 			modalElem.style.display = 'none';
 			if (content) content.classList.remove('slide-up');
@@ -136,6 +210,7 @@ document.addEventListener('DOMContentLoaded', function () {
 		if (imagemInput) imagemInput.value = '';
 		if (perfilPreview) perfilPreview.innerHTML = '';
 		if (nivelUsuarioSelect) nivelUsuarioSelect.value = 'Usuário';
+		imageRemoved = false;
 	}
 
 	function showAlert(message) {
@@ -150,7 +225,9 @@ document.addEventListener('DOMContentLoaded', function () {
 		if (!modalAlert) return;
 		modalAlert.classList.remove('fade-in');
 		modalAlert.classList.add('fade-out');
-		setTimeout(() => { modalAlert.style.display = 'none'; }, 300);
+		setTimeout(() => {
+			modalAlert.style.display = 'none';
+		}, 300);
 	}
 
 	if (closeAlertModalBtn) closeAlertModalBtn.addEventListener('click', closeAlert);
@@ -170,16 +247,19 @@ document.addEventListener('DOMContentLoaded', function () {
 					console.error(data.message);
 				}
 			})
-			.catch(console.error);
+			.catch(err => console.error('Erro ao buscar usuários:', err));
 	}
 
 	function renderTable(rows) {
 		if (!tableBody) return;
+
 		tableBody.innerHTML = '';
+
 		if (!rows || rows.length === 0) {
 			if (noDataMessage) noDataMessage.style.display = 'block';
 			return;
 		}
+
 		if (noDataMessage) noDataMessage.style.display = 'none';
 
 		rows.forEach(user => {
@@ -204,7 +284,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
 			const tdActions = document.createElement('td');
 
-			// Editar
 			const btnEdit = document.createElement('button');
 			btnEdit.classList.add('btn-edit');
 			btnEdit.dataset.id = user.id_usuario;
@@ -214,7 +293,6 @@ document.addEventListener('DOMContentLoaded', function () {
 			`;
 			tdActions.appendChild(btnEdit);
 
-			// Deletar
 			const btnDelete = document.createElement('button');
 			btnDelete.classList.add('btn-delete');
 			btnDelete.dataset.id = user.id_usuario;
@@ -224,7 +302,6 @@ document.addEventListener('DOMContentLoaded', function () {
 			`;
 			tdActions.appendChild(btnDelete);
 
-			// Imprimir (individual)
 			const btnPrint = document.createElement('button');
 			btnPrint.classList.add('btn-print');
 			btnPrint.dataset.id = user.id_usuario;
@@ -234,7 +311,6 @@ document.addEventListener('DOMContentLoaded', function () {
 			`;
 			tdActions.appendChild(btnPrint);
 
-			// Vincular Níveis
 			const btnVincular = document.createElement('button');
 			btnVincular.classList.add('btn-vincular-nivel');
 			btnVincular.dataset.id = user.id_usuario;
@@ -266,26 +342,28 @@ document.addEventListener('DOMContentLoaded', function () {
 		if (el) el.addEventListener('click', cb);
 	}
 
-	safeOnClick('sort-nome-asc',	() => sortTable('nome_usuario', true));
+	safeOnClick('sort-nome-asc', () => sortTable('nome_usuario', true));
 	safeOnClick('sort-nome-desc', () => sortTable('nome_usuario', false));
 	safeOnClick('sort-email-asc', () => sortTable('email_usuario', true));
-	safeOnClick('sort-email-desc',()=> sortTable('email_usuario', false));
+	safeOnClick('sort-email-desc', () => sortTable('email_usuario', false));
 	safeOnClick('sort-situacao-asc', () => sortTable('situacao_usuario', true));
-	safeOnClick('sort-situacao-desc',()=> sortTable('situacao_usuario', false));
+	safeOnClick('sort-situacao-desc', () => sortTable('situacao_usuario', false));
 	safeOnClick('sort-nivel-asc', () => sortTable('nivel_usuario', true));
-	safeOnClick('sort-nivel-desc',()=> sortTable('nivel_usuario', false));
+	safeOnClick('sort-nivel-desc', () => sortTable('nivel_usuario', false));
 
 	// ==============================
 	// BOTÕES: NOVO / FECHAR
 	// ==============================
-	if (btnAdd) btnAdd.addEventListener('click', () => {
-		isEditMode = false;
-		const title = document.getElementById('modal-title');
-		if (title) title.innerText = 'Adicionar Usuário';
-		if (saveBtn) saveBtn.innerText = 'Salvar';
-		clearForm();
-		openModal();
-	});
+	if (btnAdd) {
+		btnAdd.addEventListener('click', () => {
+			isEditMode = false;
+			const title = document.getElementById('modal-title');
+			if (title) title.innerText = 'Adicionar Usuário';
+			if (saveBtn) saveBtn.innerText = 'Salvar';
+			clearForm();
+			openModal();
+		});
+	}
 
 	(closeModalElements || []).forEach(el => el.addEventListener('click', closeModal));
 	if (cancelBtn) cancelBtn.addEventListener('click', () => { clearForm(); closeModal(); });
@@ -296,27 +374,19 @@ document.addEventListener('DOMContentLoaded', function () {
 	if (imagemInput) {
 		imagemInput.addEventListener('change', function () {
 			if (!(this.files && this.files[0])) return;
+
 			const file = this.files[0];
+
 			if (file.size > 1024 * 1024) {
 				alert('A imagem excede 1MB. Selecione outra.');
 				this.value = '';
 				return;
 			}
+
 			const reader = new FileReader();
 			reader.onload = function (e) {
-				if (!perfilPreview) return;
-				perfilPreview.innerHTML = `
-					<div style="position: relative; display: inline-block;">
-						<img src="${e.target.result}" alt="Imagem de Perfil" style="width:120px; height:120px; object-fit: contain;">
-						<button id="delete-preview-btn"
-							style="position: absolute; top: 0; right: 0; background: red; color:#fff; border:none;
-										 cursor:pointer; width:22px; height:22px; border-radius:2px; font-size:15px; font-weight:bold;">X</button>
-					</div>`;
-				const del = document.getElementById('delete-preview-btn');
-				if (del) del.addEventListener('click', () => {
-					perfilPreview.innerHTML = '';
-					imagemInput.value = '';
-				});
+				if (!e.target || !e.target.result) return;
+				renderPerfilPreview(e.target.result, true);
 			};
 			reader.readAsDataURL(file);
 		});
@@ -327,14 +397,14 @@ document.addEventListener('DOMContentLoaded', function () {
 	// ==============================
 	if (saveBtn) {
 		saveBtn.addEventListener('click', () => {
-			const id						= hiddenId ? hiddenId.value : '';
-			const nome					= (nomeInput?.value || '').trim();
-			const email				 = (emailInput?.value || '').trim();
-			const senha				 = senhaInput?.value || '';
+			const id = hiddenId ? hiddenId.value : '';
+			const nome = (nomeInput?.value || '').trim();
+			const email = (emailInput?.value || '').trim();
+			const senha = senhaInput?.value || '';
 			const confirmaSenha = confirmaSenhaInput?.value || '';
-			const situacao			= Array.from(situacaoInputs || []).find(i => i.checked)?.value || 'Ativo';
-			const imagem				= imagemInput?.files ? imagemInput.files[0] : null;
-			const nivelUsuario	= (nivelUsuarioSelect?.value || '').trim();
+			const situacao = Array.from(situacaoInputs || []).find(i => i.checked)?.value || 'Ativo';
+			const imagem = imagemInput?.files ? imagemInput.files[0] : null;
+			const nivelUsuario = (nivelUsuarioSelect?.value || '').trim();
 
 			if (!nome) { alert('O campo Nome é obrigatório.'); return; }
 			if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('E-mail inválido.'); return; }
@@ -346,30 +416,47 @@ document.addEventListener('DOMContentLoaded', function () {
 			formData.append('nome_usuario', nome);
 			formData.append('email_usuario', email);
 			formData.append('nivel_usuario', nivelUsuario);
-			if (!isEditMode || (isEditMode && senha !== '')) formData.append('senha_usuario', senha);
 			formData.append('situacao_usuario', situacao);
-			if (imagem) formData.append('imagem_usuario', imagem);
-			if (imageRemoved) formData.append('remove_foto', '1');
+
+			if (!isEditMode || (isEditMode && senha !== '')) {
+				formData.append('senha_usuario', senha);
+			}
+
+			if (imagem) {
+				formData.append('imagem_usuario', imagem);
+			}
+
+			if (imageRemoved) {
+				formData.append('remove_foto', '1');
+			}
 
 			const url = isEditMode
 				? '/horarios/app/controllers/usuario/updateUsuario.php'
 				: '/horarios/app/controllers/usuario/insertUsuario.php';
-			if (isEditMode) formData.append('id_usuario', id);
+
+			if (isEditMode) {
+				formData.append('id_usuario', id);
+			}
 
 			fetch(url, { method: 'POST', body: formData })
 				.then(r => r.json())
 				.then(data => {
-					if (data.status === 'error' && data.message?.includes('já existe')) {
+					if (data.status === 'error' && data.message?.toLowerCase().includes('já existe')) {
 						showAlert(data.message);
-					} else {
-						alert(data.message || 'OK');
-						if (data.status === 'success') {
-							closeModal();
-							fetchUsuarios();
-						}
+						return;
+					}
+
+					alert(data.message || 'OK');
+
+					if (data.status === 'success') {
+						closeModal();
+						fetchUsuarios();
 					}
 				})
-				.catch(console.error);
+				.catch(err => {
+					console.error(err);
+					alert('Erro ao salvar usuário.');
+				});
 		});
 	}
 
@@ -385,38 +472,31 @@ document.addEventListener('DOMContentLoaded', function () {
 			if (btn.classList.contains('btn-edit')) {
 				isEditMode = true;
 				currentEditId = btn.dataset.id;
+				imageRemoved = false;
 
 				fetch('/horarios/app/controllers/usuario/listUsuario.php')
 					.then(r => r.json())
 					.then(data => {
 						if (data.status !== 'success') return;
-						const user = (data.data || []).find(u => u.id_usuario == currentEditId);
+
+						const user = (data.data || []).find(u => String(u.id_usuario) === String(currentEditId));
 						if (!user) return;
 
 						if (hiddenId) hiddenId.value = user.id_usuario;
 						if (nomeInput) nomeInput.value = user.nome_usuario || '';
 						if (emailInput) emailInput.value = user.email_usuario || '';
-						Array.from(situacaoInputs || []).forEach(r => (r.checked = (r.value === (user.situacao_usuario || 'Ativo'))));
+
+						Array.from(situacaoInputs || []).forEach(r => {
+							r.checked = (r.value === (user.situacao_usuario || 'Ativo'));
+						});
+
 						if (nivelUsuarioSelect) nivelUsuarioSelect.value = user.nivel_usuario || '';
 
 						if (perfilPreview) {
 							if (user.imagem_usuario) {
-								let imageUrl = user.imagem_usuario;
-								if (imageUrl.includes('localhost')) {
-									imageUrl = imageUrl.replace('localhost', window.location.hostname);
-								}
-								perfilPreview.innerHTML = `
-									<div style="position: relative; display: inline-block;">
-										<img src="${imageUrl}" alt="Imagem de Perfil" style="width:120px; height:120px; object-fit: contain;">
-										<button id="delete-foto-btn"
-											style="position: absolute; top: 0; right: 0; background: red; color:#fff; border:none;
-														 cursor:pointer; width:22px; height:22px; border-radius:2px; font-size:15px; font-weight:bold;">X</button>
-									</div>`;
-								const delBtn = document.getElementById('delete-foto-btn');
-								if (delBtn) delBtn.addEventListener('click', () => {
-									perfilPreview.innerHTML = '';
-									imageRemoved = true;
-								});
+								const normalized = normalizeImagePath(user.imagem_usuario);
+								const imageUrl = toAbsoluteUrl(normalized);
+								renderPerfilPreview(imageUrl, false);
 							} else {
 								perfilPreview.innerHTML = '';
 								imageRemoved = false;
@@ -426,7 +506,12 @@ document.addEventListener('DOMContentLoaded', function () {
 						const title = document.getElementById('modal-title');
 						if (title) title.innerText = 'Editar Usuário';
 						if (saveBtn) saveBtn.innerText = 'Alterar';
+
 						openModal();
+					})
+					.catch(err => {
+						console.error(err);
+						alert('Erro ao carregar dados do usuário.');
 					});
 
 				return;
@@ -442,8 +527,9 @@ document.addEventListener('DOMContentLoaded', function () {
 			// IMPRIMIR (INDIVIDUAL)
 			if (btn.classList.contains('btn-print')) {
 				const tr = btn.closest('tr');
-				const nomeUsuario = tr ? tr.querySelector('td:nth-child(1)')?.textContent.trim() : '';
-				selectedUserId = btn.dataset.id; // importante!
+				const nomeUsuario = tr ? (tr.querySelector('td:nth-child(1)')?.textContent || '').trim() : '';
+				selectedUserId = btn.dataset.id;
+
 				if (selectedUserInput) selectedUserInput.value = nomeUsuario || '';
 				openGenericModal(modalPrint);
 				return;
@@ -453,9 +539,10 @@ document.addEventListener('DOMContentLoaded', function () {
 			if (btn.classList.contains('btn-vincular-nivel')) {
 				const userId = btn.dataset.id;
 				const tr = btn.closest('tr');
-				const userName = tr ? tr.querySelector('td:nth-child(1)')?.textContent.trim() : '';
+				const userName = tr ? (tr.querySelector('td:nth-child(1)')?.textContent || '').trim() : '';
+
 				if (usuarioNomeVinculo) usuarioNomeVinculo.value = userName || '';
-				// função definida em usuario-nivel.js
+
 				if (typeof openUsuarioNivelModal === 'function') {
 					openUsuarioNivelModal(userId);
 				}
@@ -468,7 +555,7 @@ document.addEventListener('DOMContentLoaded', function () {
 	// MODAL DE EXCLUSÃO
 	// ==============================
 	if (closeDeleteModalBtn) closeDeleteModalBtn.addEventListener('click', () => closeGenericModal(modalDelete));
-	if (cancelDeleteBtn)		 cancelDeleteBtn.addEventListener('click', () => closeGenericModal(modalDelete));
+	if (cancelDeleteBtn) cancelDeleteBtn.addEventListener('click', () => closeGenericModal(modalDelete));
 
 	if (confirmDeleteBtn) {
 		confirmDeleteBtn.addEventListener('click', function () {
@@ -494,16 +581,15 @@ document.addEventListener('DOMContentLoaded', function () {
 	// MODAL DE IMPRESSÃO INDIVIDUAL
 	// ==============================
 	if (closePrintModalBtn) closePrintModalBtn.addEventListener('click', () => closeGenericModal(modalPrint));
-	if (btnCancelar)				btnCancelar.addEventListener('click', () => closeGenericModal(modalPrint));
+	if (btnCancelar) btnCancelar.addEventListener('click', () => closeGenericModal(modalPrint));
 
 	if (btnImprimir) {
 		btnImprimir.addEventListener('click', () => {
 			closeGenericModal(modalPrint);
+
 			if (selectedUserId) {
-				// abre somente o usuário selecionado
 				window.open('/horarios/app/views/usuario.php?id_usuario=' + encodeURIComponent(selectedUserId), '_blank');
 			} else {
-				// fallback: se algo falhar, abre o geral
 				window.open('/horarios/app/views/usuario.php', '_blank');
 			}
 		});
@@ -513,8 +599,9 @@ document.addEventListener('DOMContentLoaded', function () {
 	// MODAL DE IMPRESSÃO GERAL
 	// ==============================
 	if (closePrintGeralModalBtn) closePrintGeralModalBtn.addEventListener('click', () => closeGenericModal(modalPrintGeral));
-	if (btnCancelarGeral)				btnCancelarGeral.addEventListener('click', () => closeGenericModal(modalPrintGeral));
-	if (btnImprimirGeral)				btnImprimirGeral.addEventListener('click', () => openGenericModal(modalPrintGeral));
+	if (btnCancelarGeral) btnCancelarGeral.addEventListener('click', () => closeGenericModal(modalPrintGeral));
+	if (btnImprimirGeral) btnImprimirGeral.addEventListener('click', () => openGenericModal(modalPrintGeral));
+
 	if (btnImprimirGeralConfirm) {
 		btnImprimirGeralConfirm.addEventListener('click', () => {
 			closeGenericModal(modalPrintGeral);
@@ -531,13 +618,16 @@ document.addEventListener('DOMContentLoaded', function () {
 			const q = this.value.toLowerCase();
 			const rows = tableBody ? tableBody.querySelectorAll('tr') : [];
 			let count = 0;
+
 			rows.forEach(tr => {
-				const nome	= tr.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
+				const nome = tr.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
 				const email = tr.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
 				const visible = nome.includes(q) || email.includes(q);
+
 				tr.style.display = visible ? '' : 'none';
 				if (visible) count++;
 			});
+
 			if (noDataMessage) noDataMessage.style.display = count === 0 ? 'block' : 'none';
 		});
 	}
@@ -550,6 +640,7 @@ document.addEventListener('DOMContentLoaded', function () {
 			const fileName = input.files[0].name.toLowerCase();
 			const ext = fileName.substring(fileName.lastIndexOf('.') + 1);
 			const allowed = ['jpg', 'png', 'ico'];
+
 			if (!allowed.includes(ext)) {
 				alert('Formato de imagem inválido. Apenas JPG, PNG e ICO são permitidos.');
 				input.value = '';

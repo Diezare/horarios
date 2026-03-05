@@ -788,8 +788,8 @@ main .btn-send:hover {
 #prof-nome-disciplina, #prof-restricoes-nome, #prof-nome-turno, #nomeSalaTurno,
 #prof-dt-nome, #nome-serie-disciplina, #nome-turno-dias, #selected-ano, #selected-configuracao,
 #selected-disciplina, #selected-insti, #selected-nivel, #selected-turno, #selected-evento,
-#readOnlyAno, #readOnlySerie, #readOnlyTurma, #selected-serie, #selected-total, 
-#selected-professor, #selected-professor-share, #selected-user, #usuario_nome_vinculo,
+#readOnlyAno, #readOnlySerie, #readOnlyTurma, #selected-serie, #selected-total, #print-selected-ano,
+#selected-professor, #selected-professor-share, #selected-user, #usuario_nome_vinculo, #print-selected-turno,
 #selected-sala, #selected-modalidade, #selected-categoria, #categoria-nome-readonly {
 	background-color: #dddddd
 }

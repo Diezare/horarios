@@ -82,9 +82,14 @@ document.addEventListener('DOMContentLoaded', function () {
 	}
 
 	// Helpers de placeholder "sem dados"
-	function showNoData(msg = 'Nenhuma informação encontrada.') {
+	function showNoData(msg = 'Nenhuma informação encontrada.', keepGrid = false) {
 		contentDataTreino.style.display = 'block';
-		if (diasSelecionadosContainer) diasSelecionadosContainer.innerHTML = '';
+
+		// só limpa a grade se NÃO for para manter
+		if (!keepGrid && diasSelecionadosContainer) {
+			diasSelecionadosContainer.innerHTML = '';
+		}
+
 		if (noDataMessage) {
 			noDataMessage.textContent = msg;
 			noDataMessage.style.display = 'block';
@@ -133,8 +138,8 @@ document.addEventListener('DOMContentLoaded', function () {
 		}, 300);
 	}
 
-	function exibirMensagemSemTreinos() {
-		showNoData('Não existem treinos para este turno.');
+	function exibirMensagemSemTreinos(keepGrid = false) {
+		showNoData('Não existem treinos para este turno.', keepGrid);
 	}
 
 	//============================
@@ -425,7 +430,10 @@ document.addEventListener('DOMContentLoaded', function () {
 			const data = await resp.json();
 			if (data.status === 'success') {
 				if (data.data.length === 0) {
-					exibirMensagemSemTreinos();
+					// Se já existem dias selecionados na tela, mantém a grade visível
+					// e só mostra a mensagem.
+					const manterGrade = Array.isArray(diasSelecionados) && diasSelecionados.length > 0;
+					exibirMensagemSemTreinos(manterGrade);
 					return;
 				}
 
@@ -510,8 +518,10 @@ document.addEventListener('DOMContentLoaded', function () {
 			selectModalidade.disabled = false;
 		});
 
-		selectModalidade.addEventListener('change', handleModalidadeChange);
-		selectCategoria.addEventListener('change', handleCategoriaChange);
+		//selectModalidade.addEventListener('change', handleModalidadeChange);
+		//selectCategoria.addEventListener('change', handleCategoriaChange);
+		selectModalidade.onchange = handleModalidadeChange;
+		selectCategoria.onchange = handleCategoriaChange;
 
 		if (horarioObj) {
 			selectCategoria.disabled = false;
@@ -887,3 +897,4 @@ document.addEventListener('DOMContentLoaded', function () {
 	showNoData(); // placeholder ao abrir a tela
 	loadAnoLetivo();
 }); 
+ 
