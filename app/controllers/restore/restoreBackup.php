@@ -1,112 +1,129 @@
 <?php
-// app/controllers/backup/restoreBackup.php
+// app/controllers/restore/restoreBackup.php
 declare(strict_types=1);
+
 require_once __DIR__ . '/../../../configs/init.php';
 
 header('Content-Type: application/json; charset=utf-8');
 set_time_limit(0);
 
-// 1) Checagem do upload
+function jsonResponse(string $status, string $message, array $extra = []): void
+{
+	echo json_encode(array_merge([
+		'status'  => $status,
+		'message' => $message
+	], $extra), JSON_UNESCAPED_UNICODE);
+	exit;
+}
+
 if (
 	!isset($_FILES['restoreFile']) ||
 	$_FILES['restoreFile']['error'] !== UPLOAD_ERR_OK ||
 	!is_uploaded_file($_FILES['restoreFile']['tmp_name'])
 ) {
-	echo json_encode(['status' => 'error', 'message' => 'Erro no upload do arquivo.']);
-	exit;
+	jsonResponse('error', 'Erro no upload do arquivo.');
 }
 
 $uploadedFile = $_FILES['restoreFile']['tmp_name'];
-$origName		 = $_FILES['restoreFile']['name'] ?? '';
-$ext					= strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+$origName     = $_FILES['restoreFile']['name'] ?? '';
+$ext          = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
 
-// Aceita apenas .sql (ajuste se for suportar .gz)
 if ($ext !== 'sql') {
-	echo json_encode(['status' => 'error', 'message' => 'Apenas arquivos .sql são aceitos.']);
-	exit;
+	jsonResponse('error', 'Apenas arquivos .sql são aceitos.');
 }
 
-// 2) Dados de conexão
-$dbhost		= DB_HOST;
-$dbname		= DB_NAME;
-$dbuser		= DB_USER;
-$dbpass		= DB_PASSWORD;
-$dbcharset = DB_CHARSET;
+$dbhost    = DB_HOST;
+$dbname    = DB_NAME;
+$dbuser    = DB_USER;
+$dbpass    = DB_PASSWORD;
+$dbcharset = defined('DB_CHARSET') && DB_CHARSET ? DB_CHARSET : 'utf8mb4';
 
-// 3) Local do binário mysql (Windows/Linux)
-$mysqlPath = (defined('MYSQL_PATH') && file_exists(MYSQL_PATH))
-	? MYSQL_PATH
-	: 'mysql';
-
-// 4) Montagem segura do comando (sem redirecionamento '<')
-$parts = [
-	$mysqlPath,
-	'--host=' . escapeshellarg($dbhost),
-	'--user=' . escapeshellarg($dbuser),
-	'--password=' . escapeshellarg($dbpass),
-	'--default-character-set=' . escapeshellarg($dbcharset),
-	escapeshellarg($dbname),
-];
-$cmd = implode(' ', $parts);
-
-// 5) Abre processo e envia o .sql via STDIN
-$descriptorspec = [
-	0 => ['pipe', 'r'], // STDIN
-	1 => ['pipe', 'w'], // STDOUT
-	2 => ['pipe', 'w'], // STDERR
-];
-
-$proc = proc_open($cmd, $descriptorspec, $pipes, null, null);
-
-// Falha ao iniciar o processo
-if (!is_resource($proc)) {
-	echo json_encode(['status' => 'error', 'message' => 'Não foi possível iniciar o cliente mysql.']);
-	exit;
+if (!defined('MYSQL_PATH') || !file_exists(MYSQL_PATH)) {
+	jsonResponse('error', 'mysql.exe não encontrado. Verifique a constante MYSQL_PATH em configs/paths.php.');
 }
 
-$fh = fopen($uploadedFile, 'rb');
-if ($fh === false) {
-	// Garante fechar pipes/processo
-	fclose($pipes[0]); fclose($pipes[1]); fclose($pipes[2]);
-	proc_close($proc);
-	echo json_encode(['status' => 'error', 'message' => 'Falha ao ler o arquivo enviado.']);
-	exit;
+$mysqlPath = '"' . MYSQL_PATH . '"';
+
+$tempSqlPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'restore_' . date('Ymd_His') . '_' . uniqid('', true) . '.sql';
+
+if (!move_uploaded_file($uploadedFile, $tempSqlPath)) {
+	jsonResponse('error', 'Não foi possível preparar o arquivo para restauração.');
 }
 
-// Copia o conteúdo do .sql para o STDIN do mysql
-stream_copy_to_stream($fh, $pipes[0]);
-fclose($fh);
-fclose($pipes[0]);
+/*
+ * Corrige dump do MariaDB que vem com:
+ * /*M!999999\- enable the sandbox mode *\/
+ * Essa linha quebra no mysql.exe do Windows.
+ */
+$sqlContent = file_get_contents($tempSqlPath);
+if ($sqlContent === false) {
+	@unlink($tempSqlPath);
+	jsonResponse('error', 'Não foi possível ler o arquivo temporário do restore.');
+}
 
-// Captura saídas
-$stdout = stream_get_contents($pipes[1]); fclose($pipes[1]);
-$stderr = stream_get_contents($pipes[2]); fclose($pipes[2]);
+// Remove BOM UTF-8, se existir
+$sqlContent = preg_replace('/^\xEF\xBB\xBF/', '', $sqlContent);
 
-$exitCode = proc_close($proc);
+// Remove a linha problemática do sandbox mode
+$sqlContent = preg_replace('/^\/\*M!999999\\\\- enable the sandbox mode \*\/\R?/m', '', $sqlContent);
 
-// 6) Trata retorno
-if ($exitCode !== 0) {
-	// Opcional: exponha só um resumo do erro
-	$msg = 'Erro ao restaurar o backup.';
-	if ($stderr) {
-		// Sanitiza mensagem longa
-		$trimmed = mb_substr(trim($stderr), 0, 800);
-		$msg .= ' Detalhes: ' . $trimmed;
+// Também remove a versão sem barra, se vier em outro dump
+$sqlContent = preg_replace('/^\/\*M!999999- enable the sandbox mode \*\/\R?/m', '', $sqlContent);
+
+if (file_put_contents($tempSqlPath, $sqlContent) === false) {
+	@unlink($tempSqlPath);
+	jsonResponse('error', 'Não foi possível ajustar o arquivo SQL para restauração.');
+}
+
+$command = $mysqlPath
+	. " --host=" . escapeshellarg($dbhost)
+	. " --user=" . escapeshellarg($dbuser)
+	. " --password=" . escapeshellarg($dbpass)
+	. " --default-character-set=" . escapeshellarg($dbcharset)
+	. " --binary-mode=1"
+	. " " . escapeshellarg($dbname)
+	. " < " . escapeshellarg($tempSqlPath)
+	. " 2>&1";
+
+$output = [];
+$returnVar = 0;
+
+exec($command, $output, $returnVar);
+
+@unlink($tempSqlPath);
+
+if ($returnVar !== 0) {
+	$details = trim(implode("\n", $output));
+	$message = 'Erro ao restaurar o backup.';
+
+	if ($details !== '') {
+		$message .= ' Detalhes: ' . mb_substr($details, 0, 1200);
 	}
-	echo json_encode(['status' => 'error', 'message' => $msg]);
-	exit;
+
+	$logDir = __DIR__ . '/../../../restore';
+	if (!is_dir($logDir)) {
+		@mkdir($logDir, 0755, true);
+	}
+
+	$errorLog = $logDir . '/restore_error.log';
+	@file_put_contents(
+		$errorLog,
+		'[' . date('Y-m-d H:i:s') . '] ' . $origName . ' | retorno=' . $returnVar . ' | detalhes=' . $details . PHP_EOL,
+		FILE_APPEND
+	);
+
+	jsonResponse('error', $message, [
+		'return_code' => $returnVar
+	]);
 }
 
-// 7) Log de restauração
 $logDir = __DIR__ . '/../../../restore';
 if (!is_dir($logDir)) {
 	@mkdir($logDir, 0755, true);
 }
-$logFile	= $logDir . '/restore_log.txt';
+
+$logFile  = $logDir . '/restore_log.txt';
 $logEntry = date('Y-m-d H:i:s') . ' - ' . $origName . " restaurado\n";
 @file_put_contents($logFile, $logEntry, FILE_APPEND);
 
-// 8) Sucesso
-echo json_encode(['status' => 'success', 'message' => 'Backup restaurado com sucesso.']);
-exit;
-?>
+jsonResponse('success', 'Backup restaurado com sucesso.');
