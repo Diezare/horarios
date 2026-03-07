@@ -100,9 +100,16 @@ include_once APP_SERVER_PATH . '/models/header.php';
 
 <!-- ✅ O modal de fixação será criado dinamicamente pelo JavaScript -->
 
-<script src="<?php echo JS_PATH; ?>/script.js"></script>
-<script src="<?php echo JS_PATH; ?>/horarios.js"></script>
-<!-- ✅ ADICIONAR ESTA LINHA -->
-<script src="<?php echo JS_PATH; ?>/horarios_modal_fixacao.js"></script>
+	<!-- <script src="<?php echo JS_PATH; ?>/script.js"></script>
+	<script src="<?php echo JS_PATH; ?>/horarios.js"></script>
+	<script src="<?php echo JS_PATH; ?>/horarios_modal_fixacao.js"></script> -->
+
+	<script src="<?php echo JS_PATH; ?>/script.js"></script>
+	<script src="<?php echo JS_PATH; ?>/horarios-modal.js"></script>
+	<script src="<?php echo JS_PATH; ?>/horarios-filtros.js"></script>
+	<script src="<?php echo JS_PATH; ?>/horarios-grade.js"></script>
+	<script src="<?php echo JS_PATH; ?>/horarios-modal-fixacao.js"></script>
+	<script src="<?php echo JS_PATH; ?>/horarios-geracao.js"></script>
+
 </body>
 </html>
